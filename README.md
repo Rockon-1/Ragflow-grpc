@@ -48,7 +48,9 @@ Need two different process to successfully run application - one for server, ano
 
 **Interactive mode** - shows menu where you can start any application depending upon choice
 
-```python main.py```
+```
+python main.py
+```
 Run above command in 2 different process with different menu options
 
 OR
@@ -63,11 +65,13 @@ python main.py client
 ```
 
 *Run client examples with debug logging
+```
 python main.py client --log-level DEBUG
-
-*Run both with error-only logging
+```
+Run both with error-only logging
+```
 python main.py both --log-level ERROR
-
+```
 
 --------------------------------------------
 ## Test
