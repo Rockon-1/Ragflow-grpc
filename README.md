@@ -8,7 +8,7 @@ make setup
 * install required python dependencies
 
 Note:- 
-Most of the commands are platform independent inside in make file and it is successfully tested in windows as I have developed inside windows system(Issue might come in non-windows system)
+Most of the commands are **platform independent** inside in make file and it is successfully tested in windows as I have developed inside windows system(Issue might come in non-windows system)
 
 OR do it manually
 
