@@ -47,15 +47,20 @@ GRPC_PORT = 50051      # gRPC server port
 Need two different process to successfully run application - one for server, another for client
 
 **Interactive mode** - shows menu where you can start any application depending upon choice
+
 ```python main.py```
+Run above command in 2 different process with different menu options
 
 OR
 
-**Direct server start**  -> start server application
+**Direct server start**  -> start server application in 1 process
+```
 python main.py server
-
-**Direct client start**  -> start client application
+```
+**Direct client start**  -> start client application in another process
+```
 python main.py client
+```
 
 *Run client examples with debug logging
 python main.py client --log-level DEBUG
