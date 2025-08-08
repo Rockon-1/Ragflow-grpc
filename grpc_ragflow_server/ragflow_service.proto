@@ -1,0 +1,817 @@
+syntax = "proto3";
+
+package ragflow;
+
+service RagServices {
+  // OpenAI-Compatible API
+  rpc CreateChatCompletion(CreateChatCompletionRequest) returns (stream ChatCompletionResponse);
+  rpc CreateAgentCompletion(CreateAgentCompletionRequest) returns (stream AgentCompletionResponse);
+
+  // Dataset Management
+  rpc CreateDataset(CreateDatasetRequest) returns (CreateDatasetResponse);
+  rpc DeleteDatasets(DeleteDatasetsRequest) returns (DeleteDatasetsResponse);
+  rpc UpdateDataset(UpdateDatasetRequest) returns (UpdateDatasetResponse);
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse);
+  rpc GetDatasetKnowledgeGraph(GetDatasetKnowledgeGraphRequest) returns (GetDatasetKnowledgeGraphResponse);
+  rpc DeleteDatasetKnowledgeGraph(DeleteDatasetKnowledgeGraphRequest) returns (DeleteDatasetKnowledgeGraphResponse);
+
+  // Document Management
+  rpc UploadDocuments(UploadDocumentsRequest) returns (UploadDocumentsResponse);
+  rpc UpdateDocument(UpdateDocumentRequest) returns (UpdateDocumentResponse);
+  rpc DownloadDocument(DownloadDocumentRequest) returns (DownloadDocumentResponse);
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse);
+  rpc DeleteDocuments(DeleteDocumentsRequest) returns (DeleteDocumentsResponse);
+  rpc ParseDocuments(ParseDocumentsRequest) returns (ParseDocumentsResponse);
+  rpc StopParsingDocuments(StopParsingDocumentsRequest) returns (StopParsingDocumentsResponse);
+
+  // Chunk Management
+  rpc AddChunk(AddChunkRequest) returns (AddChunkResponse);
+  rpc ListChunks(ListChunksRequest) returns (ListChunksResponse);
+  rpc DeleteChunks(DeleteChunksRequest) returns (DeleteChunksResponse);
+  rpc UpdateChunk(UpdateChunkRequest) returns (UpdateChunkResponse);
+  rpc RetrieveChunks(RetrieveChunksRequest) returns (RetrieveChunksResponse);
+
+  // Chat Assistant Management
+  rpc CreateChatAssistant(CreateChatAssistantRequest) returns (CreateChatAssistantResponse);
+  rpc UpdateChatAssistant(UpdateChatAssistantRequest) returns (UpdateChatAssistantResponse);
+  rpc DeleteChatAssistants(DeleteChatAssistantsRequest) returns (DeleteChatAssistantsResponse);
+  rpc ListChatAssistants(ListChatAssistantsRequest) returns (ListChatAssistantsResponse);
+
+  // Session Management
+  rpc CreateSessionWithChatAssistant(CreateSessionWithChatAssistantRequest) returns (CreateSessionWithChatAssistantResponse);
+  rpc UpdateChatAssistantSession(UpdateChatAssistantSessionRequest) returns (UpdateChatAssistantSessionResponse);
+  rpc ListChatAssistantSessions(ListChatAssistantSessionsRequest) returns (ListChatAssistantSessionsResponse);
+  rpc DeleteChatAssistantSessions(DeleteChatAssistantSessionsRequest) returns (DeleteChatAssistantSessionsResponse);
+  rpc ConverseWithChatAssistant(ConverseWithChatAssistantRequest) returns (stream ConverseWithChatAssistantResponse);
+  rpc CreateSessionWithAgent(CreateSessionWithAgentRequest) returns (CreateSessionWithAgentResponse);
+  rpc ConverseWithAgent(ConverseWithAgentRequest) returns (stream ConverseWithAgentResponse);
+  rpc ListAgentSessions(ListAgentSessionsRequest) returns (ListAgentSessionsResponse);
+  rpc DeleteAgentSessions(DeleteAgentSessionsRequest) returns (DeleteAgentSessionsResponse);
+  rpc GenerateRelatedQuestions(GenerateRelatedQuestionsRequest) returns (GenerateRelatedQuestionsResponse);
+
+  // Agent Management
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  rpc CreateAgent(CreateAgentRequest) returns (CreateAgentResponse);
+  rpc UpdateAgent(UpdateAgentRequest) returns (UpdateAgentResponse);
+  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
+}
+
+// Common message types
+message ErrorResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+// OpenAI-Compatible API Messages
+message CreateChatCompletionRequest {
+  string chat_id = 1;
+  string model = 2;
+  repeated ChatMessage messages = 3;
+  bool stream = 4;
+}
+
+message CreateAgentCompletionRequest {
+  string agent_id = 1;
+  string model = 2;
+  repeated ChatMessage messages = 3;
+  bool stream = 4;
+}
+
+message ChatMessage {
+  string role = 1;
+  string content = 2;
+}
+
+message ChatCompletionResponse {
+  string id = 1;
+  string object = 2;
+  int64 created = 3;
+  string model = 4;
+  repeated ChatCompletionChoice choices = 5;
+  ChatCompletionUsage usage = 6;
+  string system_fingerprint = 7;
+  ErrorResponse error = 8;
+}
+
+message AgentCompletionResponse {
+  string id = 1;
+  string object = 2;
+  int64 created = 3;
+  string model = 4;
+  repeated ChatCompletionChoice choices = 5;
+  ChatCompletionUsage usage = 6;
+  string system_fingerprint = 7;
+  ErrorResponse error = 8;
+}
+
+message ChatCompletionChoice {
+  int32 index = 1;
+  ChatMessage message = 2;
+  ChatCompletionDelta delta = 3;
+  string finish_reason = 4;
+}
+
+message ChatCompletionDelta {
+  string role = 1;
+  string content = 2;
+}
+
+message ChatCompletionUsage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+// Dataset Management Messages
+message CreateDatasetRequest {
+  string name = 1;
+  string avatar = 2;
+  string description = 3;
+  string embedding_model = 4;
+  string permission = 5;
+  string chunk_method = 6;
+  string parser_config = 7; // JSON string
+}
+
+message CreateDatasetResponse {
+  int32 code = 1;
+  string message = 2;
+  Dataset data = 3;
+}
+
+message DeleteDatasetsRequest {
+  repeated string ids = 1; // null means delete all
+}
+
+message DeleteDatasetsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message UpdateDatasetRequest {
+  string dataset_id = 1;
+  string name = 2;
+  string avatar = 3;
+  string description = 4;
+  string embedding_model = 5;
+  string permission = 6;
+  string chunk_method = 7;
+  int32 pagerank = 8;
+  string parser_config = 9; // JSON string
+}
+
+message UpdateDatasetResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ListDatasetsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string orderby = 3;
+  bool desc = 4;
+  string name = 5;
+  string id = 6;
+}
+
+message ListDatasetsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated Dataset data = 3;
+}
+
+message Dataset {
+  string id = 1;
+  string name = 2;
+  string avatar = 3;
+  string description = 4;
+  string embedding_model = 5;
+  string permission = 6;
+  string chunk_method = 7;
+  int32 chunk_count = 8;
+  int32 document_count = 9;
+  string parser_config = 10; // JSON string
+  string create_date = 11;
+  int64 create_time = 12;
+  string update_date = 13;
+  int64 update_time = 14;
+  string created_by = 15;
+  string tenant_id = 16;
+  string language = 17;
+  int32 pagerank = 18;
+  double similarity_threshold = 19;
+  double vector_similarity_weight = 20;
+  string status = 21;
+  int32 token_num = 22;
+}
+
+message GetDatasetKnowledgeGraphRequest {
+  string dataset_id = 1;
+}
+
+message GetDatasetKnowledgeGraphResponse {
+  int32 code = 1;
+  string message = 2;
+  KnowledgeGraph data = 3;
+}
+
+message DeleteDatasetKnowledgeGraphRequest {
+  string dataset_id = 1;
+}
+
+message DeleteDatasetKnowledgeGraphResponse {
+  int32 code = 1;
+  string message = 2;
+  bool data = 3;
+}
+
+message KnowledgeGraph {
+  string graph = 1; // JSON string
+  string mind_map = 2; // JSON string
+}
+
+// Document Management Messages
+message UploadDocumentsRequest {
+  string dataset_id = 1;
+  repeated DocumentFile files = 2;
+}
+
+message DocumentFile {
+  string filename = 1;
+  bytes content = 2;
+}
+
+message UploadDocumentsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated Document data = 3;
+}
+
+message UpdateDocumentRequest {
+  string dataset_id = 1;
+  string document_id = 2;
+  string name = 3;
+  string meta_fields = 4; // JSON string
+  string chunk_method = 5;
+  string parser_config = 6; // JSON string
+}
+
+message UpdateDocumentResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message DownloadDocumentRequest {
+  string dataset_id = 1;
+  string document_id = 2;
+}
+
+message DownloadDocumentResponse {
+  int32 code = 1;
+  string message = 2;
+  bytes content = 3;
+  string filename = 4;
+}
+
+message ListDocumentsRequest {
+  string dataset_id = 1;
+  string keywords = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+  string orderby = 5;
+  bool desc = 6;
+  string id = 7;
+  string name = 8;
+  int64 create_time_from = 9;
+  int64 create_time_to = 10;
+}
+
+message ListDocumentsResponse {
+  int32 code = 1;
+  string message = 2;
+  DocumentList data = 3;
+}
+
+message DocumentList {
+  repeated Document docs = 1;
+  int32 total = 2;
+}
+
+message DeleteDocumentsRequest {
+  string dataset_id = 1;
+  repeated string ids = 2;
+}
+
+message DeleteDocumentsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ParseDocumentsRequest {
+  string dataset_id = 1;
+  repeated string document_ids = 2;
+}
+
+message ParseDocumentsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message StopParsingDocumentsRequest {
+  string dataset_id = 1;
+  repeated string document_ids = 2;
+}
+
+message StopParsingDocumentsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message Document {
+  string id = 1;
+  string name = 2;
+  string location = 3;
+  string type = 4;
+  int32 size = 5;
+  string thumbnail = 6;
+  string chunk_method = 7;
+  string parser_config = 8; // JSON string
+  string run = 9;
+  string status = 10;
+  string progress_msg = 11;
+  double progress = 12;
+  double process_duration = 13;
+  string process_begin_at = 14;
+  int32 chunk_count = 15;
+  int32 token_count = 16;
+  string dataset_id = 17;
+  string created_by = 18;
+  string create_date = 19;
+  int64 create_time = 20;
+  string update_date = 21;
+  int64 update_time = 22;
+  string source_type = 23;
+}
+
+// Chunk Management Messages
+message AddChunkRequest {
+  string dataset_id = 1;
+  string document_id = 2;
+  string content = 3;
+  repeated string important_keywords = 4;
+  repeated string questions = 5;
+}
+
+message AddChunkResponse {
+  int32 code = 1;
+  string message = 2;
+  ChunkData data = 3;
+}
+
+message ChunkData {
+  Chunk chunk = 1;
+}
+
+message ListChunksRequest {
+  string dataset_id = 1;
+  string document_id = 2;
+  string keywords = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  string id = 6;
+}
+
+message ListChunksResponse {
+  int32 code = 1;
+  string message = 2;
+  ChunkList data = 3;
+}
+
+message ChunkList {
+  repeated Chunk chunks = 1;
+  Document doc = 2;
+  int32 total = 3;
+}
+
+message DeleteChunksRequest {
+  string dataset_id = 1;
+  string document_id = 2;
+  repeated string chunk_ids = 3;
+}
+
+message DeleteChunksResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message UpdateChunkRequest {
+  string dataset_id = 1;
+  string document_id = 2;
+  string chunk_id = 3;
+  string content = 4;
+  repeated string important_keywords = 5;
+  bool available = 6;
+}
+
+message UpdateChunkResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message RetrieveChunksRequest {
+  string question = 1;
+  repeated string dataset_ids = 2;
+  repeated string document_ids = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+  double similarity_threshold = 6;
+  double vector_similarity_weight = 7;
+  int32 top_k = 8;
+  string rerank_id = 9;
+  bool keyword = 10;
+  bool highlight = 11;
+  repeated string cross_languages = 12;
+}
+
+message RetrieveChunksResponse {
+  int32 code = 1;
+  string message = 2;
+  RetrievalData data = 3;
+}
+
+message RetrievalData {
+  repeated RetrievedChunk chunks = 1;
+  repeated DocumentAgg doc_aggs = 2;
+  int32 total = 3;
+}
+
+message RetrievedChunk {
+  string id = 1;
+  string content = 2;
+  string content_ltks = 3;
+  string document_id = 4;
+  string document_keyword = 5;
+  string highlight = 6;
+  string image_id = 7;
+  repeated string important_keywords = 8;
+  string kb_id = 9;
+  repeated string positions = 10;
+  double similarity = 11;
+  double term_similarity = 12;
+  double vector_similarity = 13;
+}
+
+message DocumentAgg {
+  string doc_id = 1;
+  string doc_name = 2;
+  int32 count = 3;
+}
+
+message Chunk {
+  string id = 1;
+  string content = 2;
+  string docnm_kwd = 3;
+  string document_id = 4;
+  string image_id = 5;
+  string important_keywords = 6;
+  repeated string positions = 7;
+  bool available = 8;
+  string create_time = 9;
+  double create_timestamp = 10;
+  string dataset_id = 11;
+  repeated string questions = 12;
+}
+
+// Chat Assistant Management Messages
+message CreateChatAssistantRequest {
+  string name = 1;
+  string avatar = 2;
+  repeated string dataset_ids = 3;
+  LLMConfig llm = 4;
+  PromptConfig prompt = 5;
+}
+
+message CreateChatAssistantResponse {
+  int32 code = 1;
+  string message = 2;
+  ChatAssistant data = 3;
+}
+
+message UpdateChatAssistantRequest {
+  string chat_id = 1;
+  string name = 2;
+  string avatar = 3;
+  repeated string dataset_ids = 4;
+  LLMConfig llm = 5;
+  PromptConfig prompt = 6;
+}
+
+message UpdateChatAssistantResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message DeleteChatAssistantsRequest {
+  repeated string ids = 1;
+}
+
+message DeleteChatAssistantsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ListChatAssistantsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string orderby = 3;
+  bool desc = 4;
+  string id = 5;
+  string name = 6;
+}
+
+message ListChatAssistantsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated ChatAssistant data = 3;
+}
+
+message ChatAssistant {
+  string id = 1;
+  string name = 2;
+  string avatar = 3;
+  repeated string dataset_ids = 4;
+  LLMConfig llm = 5;
+  PromptConfig prompt = 6;
+  string description = 7;
+  string do_refer = 8;
+  string language = 9;
+  string prompt_type = 10;
+  string status = 11;
+  string tenant_id = 12;
+  int32 top_k = 13;
+  string create_date = 14;
+  int64 create_time = 15;
+  string update_date = 16;
+  int64 update_time = 17;
+}
+
+message LLMConfig {
+  string model_name = 1;
+  double temperature = 2;
+  double top_p = 3;
+  double presence_penalty = 4;
+  double frequency_penalty = 5;
+}
+
+message PromptConfig {
+  double similarity_threshold = 1;
+  double keywords_similarity_weight = 2;
+  int32 top_n = 3;
+  repeated PromptVariable variables = 4;
+  string rerank_model = 5;
+  int32 top_k = 6;
+  string empty_response = 7;
+  string opener = 8;
+  bool show_quote = 9;
+  string prompt = 10;
+}
+
+message PromptVariable {
+  string key = 1;
+  bool optional = 2;
+}
+
+// Session Management Messages
+message CreateSessionWithChatAssistantRequest {
+  string chat_id = 1;
+  string name = 2;
+  string user_id = 3;
+}
+
+message CreateSessionWithChatAssistantResponse {
+  int32 code = 1;
+  string message = 2;
+  Session data = 3;
+}
+
+message UpdateChatAssistantSessionRequest {
+  string chat_id = 1;
+  string session_id = 2;
+  string name = 3;
+  string user_id = 4;
+}
+
+message UpdateChatAssistantSessionResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ListChatAssistantSessionsRequest {
+  string chat_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  string orderby = 4;
+  bool desc = 5;
+  string name = 6;
+  string id = 7;
+  string user_id = 8;
+}
+
+message ListChatAssistantSessionsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated Session data = 3;
+}
+
+message DeleteChatAssistantSessionsRequest {
+  string chat_id = 1;
+  repeated string ids = 2;
+}
+
+message DeleteChatAssistantSessionsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message ConverseWithChatAssistantRequest {
+  string chat_id = 1;
+  string question = 2;
+  bool stream = 3;
+  string session_id = 4;
+  string user_id = 5;
+}
+
+message ConverseWithChatAssistantResponse {
+  int32 code = 1;
+  string message = 2;
+  ConversationData data = 3;
+}
+
+message CreateSessionWithAgentRequest {
+  string agent_id = 1;
+  string user_id = 2;
+  map<string, string> parameters = 3;
+}
+
+message CreateSessionWithAgentResponse {
+  int32 code = 1;
+  string message = 2;
+  AgentSession data = 3;
+}
+
+message ConverseWithAgentRequest {
+  string agent_id = 1;
+  string question = 2;
+  bool stream = 3;
+  string session_id = 4;
+  string user_id = 5;
+  bool sync_dsl = 6;
+  map<string, string> parameters = 7;
+}
+
+message ConverseWithAgentResponse {
+  int32 code = 1;
+  string message = 2;
+  ConversationData data = 3;
+}
+
+message ListAgentSessionsRequest {
+  string agent_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  string orderby = 4;
+  bool desc = 5;
+  string id = 6;
+  string user_id = 7;
+  bool dsl = 8;
+}
+
+message ListAgentSessionsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated AgentSession data = 3;
+}
+
+message DeleteAgentSessionsRequest {
+  string agent_id = 1;
+  repeated string ids = 2;
+}
+
+message DeleteAgentSessionsResponse {
+  int32 code = 1;
+  string message = 2;
+}
+
+message GenerateRelatedQuestionsRequest {
+  string question = 1;
+  string industry = 2;
+}
+
+message GenerateRelatedQuestionsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated string data = 3;
+}
+
+message Session {
+  string id = 1;
+  string chat_id = 2;
+  string name = 3;
+  repeated ChatMessage messages = 4;
+  string create_date = 5;
+  int64 create_time = 6;
+  string update_date = 7;
+  int64 update_time = 8;
+}
+
+message AgentSession {
+  string id = 1;
+  string agent_id = 2;
+  string dsl = 3; // JSON string
+  repeated ChatMessage message = 4;
+  string source = 5;
+  string user_id = 6;
+}
+
+message ConversationData {
+  string answer = 1;
+  string reference = 2; // JSON string
+  bytes audio_binary = 3;
+  string id = 4;
+  string session_id = 5;
+  string prompt = 6;
+  repeated ConversationParam param = 7;
+}
+
+message ConversationParam {
+  string key = 1;
+  string name = 2;
+  bool optional = 3;
+  string type = 4;
+  string value = 5;
+}
+
+// Agent Management Messages
+message ListAgentsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string orderby = 3;
+  bool desc = 4;
+  string id = 5;
+  string name = 6;
+}
+
+message ListAgentsResponse {
+  int32 code = 1;
+  string message = 2;
+  repeated Agent data = 3;
+}
+
+message CreateAgentRequest {
+  string title = 1;
+  string description = 2;
+  string dsl = 3; // JSON string
+}
+
+message CreateAgentResponse {
+  int32 code = 1;
+  string message = 2;
+  bool data = 3;
+}
+
+message UpdateAgentRequest {
+  string agent_id = 1;
+  string title = 2;
+  string description = 3;
+  string dsl = 4; // JSON string
+}
+
+message UpdateAgentResponse {
+  int32 code = 1;
+  string message = 2;
+  bool data = 3;
+}
+
+message DeleteAgentRequest {
+  string agent_id = 1;
+}
+
+message DeleteAgentResponse {
+  int32 code = 1;
+  string message = 2;
+  bool data = 3;
+}
+
+message Agent {
+  string id = 1;
+  string title = 2;
+  string avatar = 3;
+  string canvas_type = 4;
+  string description = 5;
+  string dsl = 6; // JSON string
+  string create_date = 7;
+  int64 create_time = 8;
+  string update_date = 9;
+  int64 update_time = 10;
+  string user_id = 11;
+}
