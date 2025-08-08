@@ -35,7 +35,7 @@ Edit `config.py` with your RAGFlow server details:
 
 ```python
 # RAGFlow API Configuration
-RAGFLOW_BASE_URL = "http://localhost:9380"
+RAGFLOW_BASE_URL = "http://localhost:80"
 API_KEY = "your-api-key-here"
 
 # gRPC Server Configuration
@@ -44,12 +44,18 @@ GRPC_PORT = 50051      # gRPC server port
 ```
 
 ## Running the Server
+Need two different process to successfully run application - one for server, another for client
 
-*Interactive mode - shows menu
-python main.py
+**Interactive mode** - shows menu where you can start any application depending upon choice
+```python main.py```
 
-*Direct server start
+OR
+
+**Direct server start**  -> start server application
 python main.py server
+
+**Direct client start**  -> start client application
+python main.py client
 
 *Run client examples with debug logging
 python main.py client --log-level DEBUG
