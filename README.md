@@ -1,7 +1,3 @@
-Note:- 
-Most of the commands are platform independent and all commands and make file are successfully tested in windows as I have developed inside windows system(Issue might come in non-windows system)
-
-
 Kindly use Make file to setup the project:-
 Run below command to complete setup in 1 line
 ```
@@ -10,6 +6,9 @@ make setup
 * This will clone official RAGFLOW repo from :- https://github.com/infiniflow/ragflow.git
 * start the neccessary docker engine which is prerequistite to run ragflow 
 * install required python dependencies
+
+Note:- 
+Most of the commands are platform independent inside in make file and it is successfully tested in windows as I have developed inside windows system(Issue might come in non-windows system)
 
 OR do it manually
 
