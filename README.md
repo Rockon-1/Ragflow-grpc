@@ -46,16 +46,16 @@ GRPC_PORT = 50051      # gRPC server port
 
 ## Running the Server
 
-# Interactive mode - shows menu
+*Interactive mode - shows menu
 python main.py
 
-# Direct server start
+*Direct server start
 python main.py server
 
-# Run client examples with debug logging
+*Run client examples with debug logging
 python main.py client --log-level DEBUG
 
-# Run both with error-only logging
+*Run both with error-only logging
 python main.py both --log-level ERROR
 
 
