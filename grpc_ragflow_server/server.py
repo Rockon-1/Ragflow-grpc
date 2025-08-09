@@ -116,7 +116,6 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             
             data = {
                 'name': request.name,
-                'avatar': request.avatar,
                 'description': request.description,
                 'embedding_model': request.embedding_model,
                 'permission': request.permission,
@@ -131,35 +130,41 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             response = pb2.CreateDatasetResponse()
             response.code = result.get('code', 0)
             response.message = result.get('message', '')
-            
-            if 'data' in result:
+
+            if result.get('code', 0) >= 400 or (result.get('code', 0) < 200 and result.get('code', 0) != 0):
+                print(f"*{"----------"*2}*\nError in CreateDataset:", result)
+                return response
+
+            print(f"*{"----------"*2}*\nCreateDataset response: {result}")
+            if 'data' in result and result['data'] :
                 dataset = result['data']
-                response.data.id = dataset.get('id', '')
-                response.data.name = dataset.get('name', '')
-                response.data.avatar = dataset.get('avatar', '')
-                response.data.description = dataset.get('description', '')
-                response.data.embedding_model = dataset.get('embedding_model', '')
-                response.data.permission = dataset.get('permission', '')
-                response.data.chunk_method = dataset.get('chunk_method', '')
-                response.data.chunk_count = dataset.get('chunk_count', 0)
-                response.data.document_count = dataset.get('document_count', 0)
+                response.data.id = str(dataset.get('id', ''))
+                response.data.name = str(dataset.get('name', ''))
+                response.data.avatar = str(dataset.get('avatar', ''))
+                response.data.description = str(dataset.get('description', ''))
+                response.data.embedding_model = str(dataset.get('embedding_model', ''))
+                response.data.permission = str(dataset.get('permission', ''))
+                response.data.chunk_method = str(dataset.get('chunk_method', ''))
+                response.data.chunk_count = int(dataset.get('chunk_count', 0))
+                response.data.document_count = int(dataset.get('document_count', 0))
                 response.data.parser_config = json.dumps(dataset.get('parser_config', {}))
-                response.data.create_date = dataset.get('create_date', '')
-                response.data.create_time = dataset.get('create_time', 0)
-                response.data.update_date = dataset.get('update_date', '')
-                response.data.update_time = dataset.get('update_time', 0)
-                response.data.created_by = dataset.get('created_by', '')
-                response.data.tenant_id = dataset.get('tenant_id', '')
-                response.data.language = dataset.get('language', '')
-                response.data.pagerank = dataset.get('pagerank', 0)
-                response.data.similarity_threshold = dataset.get('similarity_threshold', 0.0)
-                response.data.vector_similarity_weight = dataset.get('vector_similarity_weight', 0.0)
-                response.data.status = dataset.get('status', '')
-                response.data.token_num = dataset.get('token_num', 0)
+                response.data.create_date = str(dataset.get('create_date', ''))
+                response.data.create_time = int(dataset.get('create_time', 0))
+                response.data.update_date = str(dataset.get('update_date', ''))
+                response.data.update_time = int(dataset.get('update_time', 0))
+                response.data.created_by = str(dataset.get('created_by', ''))
+                response.data.tenant_id = str(dataset.get('tenant_id', ''))
+                response.data.language = str(dataset.get('language', ''))
+                response.data.pagerank = int(dataset.get('pagerank', 0))
+                response.data.similarity_threshold = float(dataset.get('similarity_threshold', 0.0))
+                response.data.vector_similarity_weight = float(dataset.get('vector_similarity_weight', 0.0))
+                response.data.status = str(dataset.get('status', ''))
+                response.data.token_num = int(dataset.get('token_num', 0))
             
             return response
             
         except Exception as e:
+            print(f"Exception in CreateDataset: {e}",repr(e))
             return pb2.CreateDatasetResponse(
                 code=500,
                 message=str(e)
@@ -222,7 +227,7 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
     async def ListDatasets(self, request, context):
         """List datasets"""
         try:
-            print("$$ListDatasets request by sachin-$$", request)
+            # print("$$ListDatasets request by sachin-$$", request)
             client = await self._get_client()
             
             params = {}
@@ -240,6 +245,18 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                 params['id'] = request.id
             
             result = await client.list_datasets(params)
+
+            
+            # Check for HTTP error status code
+            if result.get('code', 0) >= 400 or (result.get('code', 0) < 200 and result.get('code', 0) != 0):
+                print(f"Error in list_datasets: {result.get('message', '')} (code: {result.get('code', 0)})",result)
+                response = pb2.ListDatasetsResponse()
+                response.code = result.get('code', 0)
+                response.message = result.get('message', '')
+                response.data.clear()
+                print("Returning empty response due to error in list_datasets")
+                return response
+
             print("$$result by sachin-$$", result)
             response = pb2.ListDatasetsResponse()
             response.code = result.get('code', 0)
@@ -364,6 +381,144 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             
         except Exception as e:
             return pb2.UploadDocumentsResponse(code=500, message=str(e))
+    
+    async def UpdateDocument(self, request, context):
+        """Update document"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.name:
+                data['name'] = request.name
+            if request.meta_fields:
+                data['meta_fields'] = json.loads(request.meta_fields)
+            if request.chunk_method:
+                data['chunk_method'] = request.chunk_method
+            if request.parser_config:
+                data['parser_config'] = json.loads(request.parser_config)
+            
+            result = await client.update_document(request.dataset_id, request.document_id, data)
+            
+            return pb2.UpdateDocumentResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.UpdateDocumentResponse(code=500, message=str(e))
+    
+    async def DownloadDocument(self, request, context):
+        """Download document"""
+        try:
+            client = await self._get_client()
+            
+            result = await client.download_document(request.dataset_id, request.document_id)
+            
+            response = pb2.DownloadDocumentResponse()
+            response.code = result.get('code', result.get('status', 0))
+            response.message = result.get('message', '')
+            
+            if 'content' in result:
+                response.content = result['content']
+                response.filename = result.get('headers', {}).get('content-disposition', '').split('filename=')[-1].strip('"') if result.get('headers') else 'document'
+            
+            return response
+            
+        except Exception as e:
+            return pb2.DownloadDocumentResponse(code=500, message=str(e))
+    
+    async def ListDocuments(self, request, context):
+        """List documents"""
+        try:
+            client = await self._get_client()
+            
+            params = {}
+            if request.keywords:
+                params['keywords'] = request.keywords
+            if request.page:
+                params['page'] = request.page
+            if request.page_size:
+                params['page_size'] = request.page_size
+            if request.orderby:
+                params['orderby'] = request.orderby
+            if request.desc:
+                params['desc'] = request.desc
+            if request.id:
+                params['id'] = request.id
+            if request.name:
+                params['name'] = request.name
+            if request.create_time_from:
+                params['create_time_from'] = request.create_time_from
+            if request.create_time_to:
+                params['create_time_to'] = request.create_time_to
+            
+            result = await client.list_documents(request.dataset_id, params)
+            print("\nListDocuments result:\n", result)
+
+            response = pb2.ListDocumentsResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            # Check for HTTP error status code
+            if result.get('code', 0) >= 400 or (result.get('code', 0) < 200 and result.get('code', 0) != 0):
+                print(f"Error in ListDocuments: {result}")
+                return response
+            
+            if 'data' in result:
+                response.data.total = result['data'].get('total', 0)
+                for doc_data in result['data'].get('docs', []):
+                    doc = pb2.Document()
+                    doc.id = str(doc_data.get('id', ''))
+                    doc.name = str(doc_data.get('name', ''))
+                    doc.location = str(doc_data.get('location', ''))
+                    doc.type = str(doc_data.get('type', ''))
+                    doc.size = int(doc_data.get('size', 0))
+                    doc.thumbnail = str(doc_data.get('thumbnail', ''))
+                    doc.chunk_method = str(doc_data.get('chunk_method', ''))
+                    doc.parser_config = json.dumps(doc_data.get('parser_config', {}))
+                    doc.run = str(doc_data.get('run', ''))
+                    doc.status = str(doc_data.get('status', ''))
+                    doc.progress_msg = str(doc_data.get('progress_msg', ''))
+                    doc.progress = float(doc_data.get('progress', 0.0))
+                    doc.process_duration = float(doc_data.get('process_duration', 0.0))
+                    doc.process_begin_at = str(doc_data.get('process_begin_at', ''))
+                    doc.chunk_count = int(doc_data.get('chunk_count', 0))
+                    doc.token_count = int(doc_data.get('token_count', 0))
+                    doc.dataset_id = str(doc_data.get('dataset_id', ''))
+                    doc.created_by = str(doc_data.get('created_by', ''))
+                    doc.create_date = str(doc_data.get('create_date', ''))
+                    doc.create_time = int(doc_data.get('create_time', 0))
+                    doc.update_date = str(doc_data.get('update_date', ''))
+                    doc.update_time = int(doc_data.get('update_time', 0))
+                    doc.source_type = str(doc_data.get('source_type', ''))
+                    response.data.docs.append(doc)
+            
+            return response
+            
+        except Exception as e:
+            print(f"Exception in ListDocuments: {e}")
+            return pb2.ListDocumentsResponse(code=500, message=str(e))
+    
+    async def DeleteDocuments(self, request, context):
+        """Delete documents"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.ids:
+                data['ids'] = list(request.ids)
+            else:
+                data['ids'] = None  # Delete all documents
+            
+            result = await client.delete_documents(request.dataset_id, data)
+            
+            return pb2.DeleteDocumentsResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.DeleteDocumentsResponse(code=500, message=str(e))
     
     # Add implementations for other methods following the same pattern...
     # For brevity, I'll show the structure for a few more key methods

@@ -103,18 +103,24 @@ class RAGFlowGRPCClient:
                 self.stub = pb2_grpc.RagServicesStub(self.channel)
             response = await self.stub.ListDatasets(request)
             datasets = []
-            for dataset in response.data:
-                datasets.append({
-                    "id": dataset.id,
-                    "name": dataset.name,
-                    "description": dataset.description,
-                    "embedding_model": dataset.embedding_model,
-                    "chunk_count": dataset.chunk_count,
-                    "document_count": dataset.document_count,
-                    "create_date": dataset.create_date
-                })
-            
-            logger.info(f"Retrieved {len(datasets)} datasets")
+
+            if response.code >= 400 or (response.code < 200 and response.code != 0):
+                print(f"Error in list_datasets: {response.message} (code: {response.code})")
+
+            else:
+                
+                for dataset in response.data:
+                    datasets.append({
+                        "id": dataset.id,
+                        "name": dataset.name,
+                        "description": dataset.description,
+                        "embedding_model": dataset.embedding_model,
+                        "chunk_count": dataset.chunk_count,
+                        "document_count": dataset.document_count,
+                        "create_date": dataset.create_date
+                    })
+
+                logger.info(f"Retrieved {len(datasets)} datasets")
             return {
                 "code": response.code,
                 "message": response.message,
@@ -228,7 +234,11 @@ class RAGFlowGRPCClient:
         try:
             response = await self.stub.ListDocuments(request)
             documents = []
-            for doc in response.document_list.documents:
+            if response.code >= 400 or (response.code < 200 and response.code != 0):
+                logger.error(f"Failed to list documents: {response.message}")
+                return {"error": response.message, "code": response.code}
+
+            for doc in response.data.docs:
                 documents.append({
                     "id": doc.id,
                     "name": doc.name,
@@ -406,9 +416,9 @@ class RAGFlowGRPCExamples:
             
             # Create a new dataset
             dataset_result = await self.client.create_dataset(
-                name="gRPC Test Dataset",
+                name="gRPC Test Dataset for Chunk",
                 description="A test dataset created via gRPC client",
-                embedding_model="BAAI/bge-large-zh-v1.5",
+                embedding_model="BAAI/bge-large-zh-v1.5@BAAI",
                 permission="me",
                 chunk_method="manual"
             )
@@ -423,8 +433,14 @@ class RAGFlowGRPCExamples:
                         description="Updated description via gRPC"
                     )
                     logger.info(f"Update result: {json.dumps(update_result, indent=2)}")
-                    
+                    if update_result.get('code') == 0:
+                        logger.info("Dataset updated successfully")
+
                     # Get knowledge graph
+
+                    #test - will removed
+                    dataset_id = datasets["data"][0].get('id')
+
                     kg_result = await self.client.get_dataset_knowledge_graph(dataset_id)
                     logger.info(f"Knowledge graph: {json.dumps(kg_result, indent=2)}")
                     
@@ -446,6 +462,7 @@ class RAGFlowGRPCExamples:
         try:
             # List documents in the dataset
             docs = await self.client.list_documents(dataset_id)
+            logger.info(f"Below response received for list documents: \n",docs)
             logger.info(f"Documents in dataset: {json.dumps(docs, indent=2)}")
             
             # Note: Upload documents would require actual files
@@ -456,8 +473,8 @@ class RAGFlowGRPCExamples:
             # )
             # logger.info(f"Upload result: {json.dumps(upload_result, indent=2)}")
         except Exception as e:
-            logger.error(f"Document operations failed: {e}")
-    
+            logger.error(f"Document operations failed: {e}", repr(e))
+
     async def test_chunk_retrieval(self, dataset_ids: List[str]):
         """Test chunk retrieval"""
         if not dataset_ids:
