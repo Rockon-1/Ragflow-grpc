@@ -5,6 +5,11 @@ from typing import Dict, List, Optional, Union, AsyncIterator
 from config import RAGFLOW_BASE_URL, API_KEY
 
 
+class RAGFlowConnectionError(Exception):
+    """Raised when RAGFlow service is not accessible"""
+    pass
+
+
 class RAGFlowClient:
     """Async HTTP client for RAGFlow REST API"""
     
@@ -21,11 +26,61 @@ class RAGFlowClient:
             },
             timeout=aiohttp.ClientTimeout(total=300)
         )
+        
+        # Check if RAGFlow service is running
+        await self._check_ragflow_connection()
+        
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
+    
+    async def _check_ragflow_connection(self) -> bool:
+        """Check if RAGFlow service is accessible"""
+        try:
+            # Try to reach the base URL with a simple health check
+            # Using a short timeout for the connection check
+            async with self.session.get(
+                f"{self.base_url}/",
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                # If we get any response (even 404), the service is running
+                print(f"RAGFlow connection check: Status {response.status}")
+                return True
+                
+        except aiohttp.ClientConnectorError as e:
+            error_msg = f"RAGFlow service is not running at {self.base_url}. Please ensure RAGFlow is started and accessible."
+            print(f"Connection error: {error_msg}")
+            raise RAGFlowConnectionError(error_msg) from e
+            
+        except asyncio.TimeoutError as e:
+            error_msg = f"RAGFlow service at {self.base_url} is not responding (timeout). Please check if the service is running properly."
+            print(f"Timeout error: {error_msg}")
+            raise RAGFlowConnectionError(error_msg) from e
+            
+        except Exception as e:
+            error_msg = f"Failed to connect to RAGFlow service at {self.base_url}: {str(e)}"
+            print(f"Unexpected error: {error_msg}")
+            raise RAGFlowConnectionError(error_msg) from e
+    
+    async def check_connection(self) -> bool:
+        """Public method to check RAGFlow connection without context manager"""
+        session = None
+        try:
+            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+            async with session.get(f"{self.base_url}/") as response:
+                print(f"RAGFlow connection check: Status {response.status}")
+                return True
+        except aiohttp.ClientConnectorError:
+            return False
+        except asyncio.TimeoutError:
+            return False
+        except Exception:
+            return False
+        finally:
+            if session:
+                await session.close()
     
     async def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict:
         """Make HTTP request to RAGFlow API"""
@@ -52,6 +107,14 @@ class RAGFlowClient:
                         'status': response.status,
                         'headers': dict(response.headers)
                     }
+        except aiohttp.ClientConnectorError as e:
+            error_msg = f"Cannot connect to RAGFlow service at {self.base_url}. Please ensure RAGFlow is running."
+            print(f"Connection error in _make_request: {error_msg}")
+            return {'error': error_msg, 'code': 503}
+        except asyncio.TimeoutError as e:
+            error_msg = f"RAGFlow service at {self.base_url} is not responding (timeout)."
+            print(f"Timeout error in _make_request: {error_msg}")
+            return {'error': error_msg, 'code': 504}
         except Exception as e:
             return {'error': str(e), 'code': 500}
     
@@ -61,38 +124,117 @@ class RAGFlowClient:
         
         try:
             async with self.session.request(method, url, **kwargs) as response:
-                async for line in response.content:
-                    if line:
-                        line_str = line.decode('utf-8').strip()
-                        if line_str.startswith('data:'):
-                            try:
-                                data_str = line_str[5:].strip()
-                                if data_str and data_str != '[DONE]':
-                                    yield json.loads(data_str)
-                            except json.JSONDecodeError:
+                print(f"Stream response status: {response.status}")
+                print(f"Stream response headers: {dict(response.headers)}")
+                
+                # Check if response is successful
+                if response.status >= 400:
+                    error_text = await response.text()
+                    print(f"HTTP Error {response.status}: {error_text}")
+                    yield {'error': f'HTTP {response.status}: {error_text}', 'code': response.status}
+                    return
+                
+                # Read the stream line by line
+                buffer = ""
+                async for chunk in response.content.iter_chunked(8192):
+                    if chunk:
+                        # Decode the chunk and add to buffer
+                        buffer += chunk.decode('utf-8', errors='ignore')
+                        
+                        # Process complete lines
+                        while '\n' in buffer:
+                            line, buffer = buffer.split('\n', 1)
+                            line = line.strip()
+                            
+                            # Skip empty lines or lines that only contain whitespace
+                            if not line:
                                 continue
+
+                            print(f"Received line: {line}")
+                            
+                            # Handle Server-Sent Events format
+                            if line.startswith('data:'):
+                                # Extract JSON data after 'data:' prefix
+                                json_str = line[5:].strip()  # Remove 'data:' prefix
+                                
+                                # Skip if it's just the stream end marker
+                                if json_str == '[DONE]':
+                                    print("Stream ended with [DONE] marker")
+                                    continue
+                                
+                                try:
+                                    # Parse JSON data
+                                    json_data = json.loads(json_str)
+                                    print(f"Yielding JSON: {json_data}")
+                                    yield json_data
+                                except json.JSONDecodeError as e:
+                                    print(f"JSON decode error: {e}, data: {json_str}")
+                                    continue
+                            elif line.startswith('event:') or line.startswith('id:'):
+                                # Skip SSE metadata lines
+                                print(f"Skipping SSE metadata: {line}")
+                                continue
+                            else:
+                                # Try to parse as direct JSON (fallback for non-SSE streams)
+                                try:
+                                    json_data = json.loads(line)
+                                    print(f"Yielding direct JSON: {json_data}")
+                                    yield json_data
+                                except json.JSONDecodeError as e:
+                                    print(f"JSON decode error for direct line: {e}, data: {line}")
+                                    continue
+                                
+        except aiohttp.ClientConnectorError as e:
+            error_msg = f"Cannot connect to RAGFlow service at {self.base_url}. Please ensure RAGFlow is running."
+            print(f"Connection error in _stream_request: {error_msg}")
+            yield {'error': error_msg, 'code': 503}
+        except asyncio.TimeoutError as e:
+            error_msg = f"RAGFlow service at {self.base_url} is not responding (timeout)."
+            print(f"Timeout error in _stream_request: {error_msg}")
+            yield {'error': error_msg, 'code': 504}
         except Exception as e:
+            print(f"Exception in _stream_request: {e}")
             yield {'error': str(e), 'code': 500}
     
     # OpenAI-Compatible API
     async def create_chat_completion(self, chat_id: str, data: Dict) -> AsyncIterator[Dict]:
         """Create chat completion"""
         endpoint = f"/api/v1/chats_openai/{chat_id}/chat/completions"
-        if data.get('stream', True):
-            async for chunk in self._stream_request('POST', endpoint, json=data):
-                yield chunk
-        else:
-            result = await self._make_request('POST', endpoint, json=data)
-            yield result
-    
+        
+        try:
+            print("Creating chat completion...in ragflow_client.py")
+            if data.get('stream', True):
+                print("Streaming enabled for chat completion for chat_id:", chat_id)
+                
+                # Set up headers for streaming
+                headers = {
+                    'Authorization': f'Bearer {self.api_key}',
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                    'Cache-Control': 'no-cache'
+                }
+                
+                async for chunk in self._stream_request('POST', endpoint, json=data, headers=headers):
+                    print("yielding chunk for chat completion", chunk)
+                    yield chunk
+            else:
+                headers = {'Authorization': f'Bearer {self.api_key}'}
+                result = await self._make_request('POST', endpoint, json=data, headers=headers)
+                yield result
+        except Exception as e:
+            print(f"Exception in CreateChatCompletion in ragflow_client.py: {e}", repr(e))
+            yield {'error': str(e), 'code': 500}
+
     async def create_agent_completion(self, agent_id: str, data: Dict) -> AsyncIterator[Dict]:
         """Create agent completion"""
         endpoint = f"/api/v1/agents_openai/{agent_id}/chat/completions"
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+
         if data.get('stream', True):
-            async for chunk in self._stream_request('POST', endpoint, json=data):
+            async for chunk in self._stream_request('POST', endpoint, json=data, headers=headers):
                 yield chunk
         else:
-            result = await self._make_request('POST', endpoint, json=data)
+            result = await self._make_request('POST', endpoint, json=data, headers=headers)
             yield result
     
     # Dataset Management
@@ -146,133 +288,164 @@ class RAGFlowClient:
     
     async def update_document(self, dataset_id: str, document_id: str, data: Dict) -> Dict:
         """Update document"""
-        return await self._make_request('PUT', f'/api/v1/datasets/{dataset_id}/documents/{document_id}', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('PUT', f'/api/v1/datasets/{dataset_id}/documents/{document_id}', json=data, headers=headers)
+
     async def download_document(self, dataset_id: str, document_id: str) -> Dict:
         """Download document"""
-        return await self._make_request('GET', f'/api/v1/datasets/{dataset_id}/documents/{document_id}')
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('GET', f'/api/v1/datasets/{dataset_id}/documents/{document_id}', headers=headers)
+
     async def list_documents(self, dataset_id: str, params: Dict) -> Dict:
         """List documents"""
-        return await self._make_request('GET', f'/api/v1/datasets/{dataset_id}/documents', params=params)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('GET', f'/api/v1/datasets/{dataset_id}/documents', params=params, headers=headers)
+
     async def delete_documents(self, dataset_id: str, data: Dict) -> Dict:
         """Delete documents"""
-        return await self._make_request('DELETE', f'/api/v1/datasets/{dataset_id}/documents', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('DELETE', f'/api/v1/datasets/{dataset_id}/documents', json=data, headers=headers)
+
     async def parse_documents(self, dataset_id: str, data: Dict) -> Dict:
         """Parse documents"""
-        return await self._make_request('POST', f'/api/v1/datasets/{dataset_id}/chunks', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('POST', f'/api/v1/datasets/{dataset_id}/chunks', json=data, headers=headers)
+
     async def stop_parsing_documents(self, dataset_id: str, data: Dict) -> Dict:
         """Stop parsing documents"""
-        return await self._make_request('DELETE', f'/api/v1/datasets/{dataset_id}/chunks', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('DELETE', f'/api/v1/datasets/{dataset_id}/chunks', json=data, headers=headers)
+
     # Chunk Management
     async def add_chunk(self, dataset_id: str, document_id: str, data: Dict) -> Dict:
         """Add chunk"""
-        return await self._make_request('POST', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('POST', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks', json=data, headers=headers)
+
     async def list_chunks(self, dataset_id: str, document_id: str, params: Dict) -> Dict:
         """List chunks"""
-        return await self._make_request('GET', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks', params=params)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('GET', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks', params=params, headers=headers)
+
     async def delete_chunks(self, dataset_id: str, document_id: str, data: Dict) -> Dict:
         """Delete chunks"""
-        return await self._make_request('DELETE', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('DELETE', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks', json=data, headers=headers)
+
     async def update_chunk(self, dataset_id: str, document_id: str, chunk_id: str, data: Dict) -> Dict:
         """Update chunk"""
-        return await self._make_request('PUT', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('PUT', f'/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}', json=data, headers=headers)
+
     async def retrieve_chunks(self, data: Dict) -> Dict:
         """Retrieve chunks"""
-        return await self._make_request('POST', '/api/v1/retrieval', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+
+        return await self._make_request('POST', '/api/v1/retrieval', json=data, headers=headers)
+
     # Chat Assistant Management
     async def create_chat_assistant(self, data: Dict) -> Dict:
         """Create chat assistant"""
-        return await self._make_request('POST', '/api/v1/chats', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+
+        return await self._make_request('POST', '/api/v1/chats', json=data, headers=headers)
+
     async def update_chat_assistant(self, chat_id: str, data: Dict) -> Dict:
         """Update chat assistant"""
-        return await self._make_request('PUT', f'/api/v1/chats/{chat_id}', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('PUT', f'/api/v1/chats/{chat_id}', json=data, headers=headers)
+
     async def delete_chat_assistants(self, data: Dict) -> Dict:
         """Delete chat assistants"""
-        return await self._make_request('DELETE', '/api/v1/chats', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('DELETE', '/api/v1/chats', json=data, headers=headers)
+
     async def list_chat_assistants(self, params: Dict) -> Dict:
         """List chat assistants"""
-        return await self._make_request('GET', '/api/v1/chats', params=params)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('GET', '/api/v1/chats', params=params, headers=headers)
+
     # Session Management
     async def create_session_with_chat_assistant(self, chat_id: str, data: Dict) -> Dict:
         """Create session with chat assistant"""
-        return await self._make_request('POST', f'/api/v1/chats/{chat_id}/sessions', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('POST', f'/api/v1/chats/{chat_id}/sessions', json=data, headers=headers)
+
     async def update_chat_assistant_session(self, chat_id: str, session_id: str, data: Dict) -> Dict:
         """Update chat assistant session"""
-        return await self._make_request('PUT', f'/api/v1/chats/{chat_id}/sessions/{session_id}', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('PUT', f'/api/v1/chats/{chat_id}/sessions/{session_id}', json=data, headers=headers)
+
     async def list_chat_assistant_sessions(self, chat_id: str, params: Dict) -> Dict:
         """List chat assistant sessions"""
-        return await self._make_request('GET', f'/api/v1/chats/{chat_id}/sessions', params=params)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('GET', f'/api/v1/chats/{chat_id}/sessions', params=params, headers=headers)
+
     async def delete_chat_assistant_sessions(self, chat_id: str, data: Dict) -> Dict:
         """Delete chat assistant sessions"""
-        return await self._make_request('DELETE', f'/api/v1/chats/{chat_id}/sessions', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('DELETE', f'/api/v1/chats/{chat_id}/sessions', json=data, headers=headers)
+
     async def converse_with_chat_assistant(self, chat_id: str, data: Dict) -> AsyncIterator[Dict]:
         """Converse with chat assistant"""
+        headers = {'Authorization': f'Bearer {self.api_key}'}
         endpoint = f"/api/v1/chats/{chat_id}/completions"
         if data.get('stream', True):
-            async for chunk in self._stream_request('POST', endpoint, json=data):
+            async for chunk in self._stream_request('POST', endpoint, json=data, headers=headers):
                 yield chunk
         else:
-            result = await self._make_request('POST', endpoint, json=data)
+            result = await self._make_request('POST', endpoint, json=data, headers=headers)
             yield result
     
     async def create_session_with_agent(self, agent_id: str, data: Dict, params: Dict = None) -> Dict:
         """Create session with agent"""
-        return await self._make_request('POST', f'/api/v1/agents/{agent_id}/sessions', json=data, params=params)
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('POST', f'/api/v1/agents/{agent_id}/sessions', json=data, params=params, headers=headers)
     
     async def converse_with_agent(self, agent_id: str, data: Dict) -> AsyncIterator[Dict]:
         """Converse with agent"""
+        headers = {'Authorization': f'Bearer {self.api_key}'}
         endpoint = f"/api/v1/agents/{agent_id}/completions"
         if data.get('stream', True):
-            async for chunk in self._stream_request('POST', endpoint, json=data):
+            async for chunk in self._stream_request('POST', endpoint, json=data, headers=headers):
                 yield chunk
         else:
-            result = await self._make_request('POST', endpoint, json=data)
+            result = await self._make_request('POST', endpoint, json=data, headers=headers)
             yield result
     
     async def list_agent_sessions(self, agent_id: str, params: Dict) -> Dict:
         """List agent sessions"""
-        return await self._make_request('GET', f'/api/v1/agents/{agent_id}/sessions', params=params)
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('GET', f'/api/v1/agents/{agent_id}/sessions', params=params, headers=headers)
     
     async def delete_agent_sessions(self, agent_id: str, data: Dict) -> Dict:
         """Delete agent sessions"""
-        return await self._make_request('DELETE', f'/api/v1/agents/{agent_id}/sessions', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('DELETE', f'/api/v1/agents/{agent_id}/sessions', json=data, headers=headers)
+
     async def generate_related_questions(self, data: Dict) -> Dict:
         """Generate related questions"""
         # Note: This endpoint uses login token, may need different auth
-        return await self._make_request('POST', '/v1/sessions/related_questions', json=data)
-    
+        headers = {'Authorization': f'Bearer {self.api_key}'}
+        return await self._make_request('POST', '/v1/sessions/related_questions', json=data, headers=headers)
+
     # Agent Management
     async def list_agents(self, params: Dict) -> Dict:
         """List agents"""
-        return await self._make_request('GET', '/api/v1/agents', params=params)
-    
+        headers = {'Authorization': f"Bearer {self.api_key}"}
+        return await self._make_request('GET', '/api/v1/agents', params=params, headers=headers)
+
     async def create_agent(self, data: Dict) -> Dict:
         """Create agent"""
-        return await self._make_request('POST', '/api/v1/agents', json=data)
-    
+        headers = {'Authorization': f"Bearer {self.api_key}"}
+        return await self._make_request('POST', '/api/v1/agents', json=data, headers=headers)
+
     async def update_agent(self, agent_id: str, data: Dict) -> Dict:
         """Update agent"""
-        return await self._make_request('PUT', f'/api/v1/agents/{agent_id}', json=data)
-    
+        headers = {'Authorization': f"Bearer {self.api_key}"}
+        return await self._make_request('PUT', f'/api/v1/agents/{agent_id}', json=data, headers=headers)
+
     async def delete_agent(self, agent_id: str) -> Dict:
         """Delete agent"""
-        return await self._make_request('DELETE', f'/api/v1/agents/{agent_id}', json={})
+        headers = {'Authorization': f"Bearer {self.api_key}"}
+        return await self._make_request('DELETE', f'/api/v1/agents/{agent_id}', json={}, headers=headers)

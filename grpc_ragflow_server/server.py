@@ -5,7 +5,7 @@ from concurrent import futures
 from typing import Dict, List, Optional, AsyncIterator
 import ragflow_service_pb2 as pb2
 import ragflow_service_pb2_grpc as pb2_grpc
-from ragflow_client import RAGFlowClient
+from ragflow_client import RAGFlowClient, RAGFlowConnectionError
 from config import GRPC_HOST, GRPC_PORT
 
 
@@ -17,16 +17,29 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
     
     async def _get_client(self) -> RAGFlowClient:
         """Get or create RAGFlow client"""
-        if self.client is None:
-            self.client = RAGFlowClient()
-            await self.client.__aenter__()
-        return self.client
+        try:
+            if self.client is None:
+                self.client = RAGFlowClient()
+                await self.client.__aenter__()
+            return self.client
+        except RAGFlowConnectionError as e:
+            print(f"RAGFlow connection error: {e}")
+            # Reset client so next call will retry
+            self.client = None
+            raise e
     
     def _handle_error(self, error_dict: Dict) -> pb2.ErrorResponse:
         """Convert error dict to protobuf ErrorResponse"""
         return pb2.ErrorResponse(
             code=error_dict.get('code', 500),
             message=error_dict.get('message', str(error_dict.get('error', 'Unknown error')))
+        )
+    
+    def _handle_connection_error(self, error: RAGFlowConnectionError) -> pb2.ErrorResponse:
+        """Handle RAGFlow connection errors"""
+        return pb2.ErrorResponse(
+            code=503,  # Service Unavailable
+            message=f"RAGFlow service unavailable: {str(error)}"
         )
     
     # OpenAI-Compatible API
@@ -56,26 +69,41 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                         response.created = chunk['created']
                     if 'model' in chunk:
                         response.model = chunk['model']
+               
                     if 'choices' in chunk:
                         for choice in chunk['choices']:
                             choice_pb = pb2.ChatCompletionChoice()
                             choice_pb.index = choice.get('index', 0)
                             if 'message' in choice:
                                 choice_pb.message.role = choice['message'].get('role', '')
-                                choice_pb.message.content = choice['message'].get('content', '')
+                                choice_pb.message.content = choice['message'].get('content', '') if choice['message'].get('content', '') is not None else ''
                             if 'delta' in choice:
                                 choice_pb.delta.role = choice['delta'].get('role', '')
-                                choice_pb.delta.content = choice['delta'].get('content', '')
-                            choice_pb.finish_reason = choice.get('finish_reason', '')
+                                choice_pb.delta.content = choice['delta'].get('content', '') if choice['delta'].get('content', '') is not None else ''
+
+                            finish_reason = choice.get('finish_reason', '')
+                            if finish_reason is None:
+                                finish_reason = ''
+                            choice_pb.finish_reason = str(finish_reason)
                             response.choices.append(choice_pb)
-                    if 'usage' in chunk:
+                    if 'usage' in chunk and chunk['usage'] is not None:
                         response.usage.prompt_tokens = chunk['usage'].get('prompt_tokens', 0)
                         response.usage.completion_tokens = chunk['usage'].get('completion_tokens', 0)
                         response.usage.total_tokens = chunk['usage'].get('total_tokens', 0)
-                    
+
+                    # Check for error codes in the chunk and set error fields directly
+                    if chunk.get('code', 0) >= 400 or (chunk.get('code', 0) < 200 and chunk.get('code', 0) != 0):
+                        response.error.code = chunk.get('code', 0)
+                        response.error.message = chunk.get('message', '')
+
+                    print("\n**Yielding response for CreateChatCompletion", response)
                     yield response
                     
+        except RAGFlowConnectionError as e:
+            print(f"RAGFlow connection error in CreateChatCompletion: {e}")
+            yield pb2.ChatCompletionResponse(error=self._handle_connection_error(e))
         except Exception as e:
+            print(f"Exception in CreateChatCompletion: {e}",repr(e))
             yield pb2.ChatCompletionResponse(error=pb2.ErrorResponse(code=500, message=str(e)))
     
     async def CreateAgentCompletion(self, request, context):
@@ -530,8 +558,6 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             
             data = {
                 'question': request.question,
-                'dataset_ids': list(request.dataset_ids) if request.dataset_ids else None,
-                'document_ids': list(request.document_ids) if request.document_ids else None,
                 'page': request.page if request.page else 1,
                 'page_size': request.page_size if request.page_size else 30,
                 'similarity_threshold': request.similarity_threshold if request.similarity_threshold else 0.2,
@@ -541,12 +567,19 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                 'highlight': request.highlight,
                 'cross_languages': list(request.cross_languages) if request.cross_languages else []
             }
-            
+            if request.dataset_ids:
+                data['dataset_ids'] = list(request.dataset_ids)
+
+            if request.document_ids:
+                data['document_ids'] = list(request.document_ids)
+
             if request.rerank_id:
                 data['rerank_id'] = request.rerank_id
             
+            print("RetrieveChunks request data:", data)
             result = await client.retrieve_chunks(data)
-            
+            print("Retrieved chunks API result:", result)
+
             response = pb2.RetrieveChunksResponse()
             response.code = result.get('code', 0)
             response.message = result.get('message', '')
@@ -558,32 +591,41 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                 # Add chunks
                 for chunk_data in retrieval_data.get('chunks', []):
                     chunk = pb2.RetrievedChunk()
-                    chunk.id = chunk_data.get('id', '')
-                    chunk.content = chunk_data.get('content', '')
-                    chunk.content_ltks = chunk_data.get('content_ltks', '')
-                    chunk.document_id = chunk_data.get('document_id', '')
-                    chunk.document_keyword = chunk_data.get('document_keyword', '')
-                    chunk.highlight = chunk_data.get('highlight', '')
-                    chunk.image_id = chunk_data.get('image_id', '')
-                    chunk.important_keywords.extend(chunk_data.get('important_keywords', []))
-                    chunk.kb_id = chunk_data.get('kb_id', '')
-                    chunk.positions.extend(chunk_data.get('positions', []))
-                    chunk.similarity = chunk_data.get('similarity', 0.0)
-                    chunk.term_similarity = chunk_data.get('term_similarity', 0.0)
-                    chunk.vector_similarity = chunk_data.get('vector_similarity', 0.0)
+                    
+                    chunk.id = str(chunk_data.get('id', ''))
+                    chunk.content = str(chunk_data.get('content', ''))
+                    chunk.content_ltks = str(chunk_data.get('content_ltks', ''))
+                    chunk.document_id = str(chunk_data.get('document_id', ''))
+                    chunk.document_keyword = str(chunk_data.get('document_keyword', ''))
+                    chunk.highlight = str(chunk_data.get('highlight', ''))
+                    chunk.image_id = str(chunk_data.get('image_id', ''))
+                    # Ensure important_keywords is a list of strings
+                    keywords = chunk_data.get('important_keywords', [])
+                    if keywords:
+                        chunk.important_keywords.extend([str(kw) for kw in keywords])
+                    chunk.kb_id = str(chunk_data.get('kb_id', ''))
+                    # Ensure positions is a list of strings
+                    positions = chunk_data.get('positions', [])
+                    if positions:
+                        chunk.positions.extend([str(pos) for pos in positions])
+                    chunk.similarity = float(chunk_data.get('similarity', 0.0))
+                    chunk.term_similarity = float(chunk_data.get('term_similarity', 0.0))
+                    chunk.vector_similarity = float(chunk_data.get('vector_similarity', 0.0))
                     response.data.chunks.append(chunk)
-                
+
+                print(f"\nRetrieved {len(response.data.chunks)} chunks")
                 # Add document aggregations
                 for doc_agg_data in retrieval_data.get('doc_aggs', []):
                     doc_agg = pb2.DocumentAgg()
-                    doc_agg.doc_id = doc_agg_data.get('doc_id', '')
-                    doc_agg.doc_name = doc_agg_data.get('doc_name', '')
-                    doc_agg.count = doc_agg_data.get('count', 0)
+                    doc_agg.doc_id = str(doc_agg_data.get('doc_id', ''))
+                    doc_agg.doc_name = str(doc_agg_data.get('doc_name', ''))
+                    doc_agg.count = int(doc_agg_data.get('count', 0))
                     response.data.doc_aggs.append(doc_agg)
             
             return response
             
         except Exception as e:
+            print(f"Exception in RetrieveChunks: {e}", repr(e))
             return pb2.RetrieveChunksResponse(code=500, message=str(e))
     
     async def ConverseWithChatAssistant(self, request, context):
@@ -682,6 +724,134 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                     
         except Exception as e:
             yield pb2.ConverseWithAgentResponse(code=500, message=str(e))
+
+    async def ListAgents(self, request, context):
+        """List agents"""
+        try:
+            client = await self._get_client()
+            
+            params = {}
+            if request.page:
+                params['page'] = request.page
+            if request.page_size:
+                params['page_size'] = request.page_size
+            if request.orderby:
+                params['orderby'] = request.orderby
+            if request.desc:
+                params['desc'] = request.desc
+            if request.name:
+                params['name'] = request.name
+            if request.id:
+                params['id'] = request.id
+            
+            result = await client.list_agents(params)
+            
+            # Check for HTTP error status code
+            if result.get('code', 0) >= 400 or (result.get('code', 0) < 200 and result.get('code', 0) != 0):
+                print(f"Error in list_agents: {result.get('message', '')} (code: {result.get('code', 0)})", result)
+                response = pb2.ListAgentsResponse()
+                response.code = result.get('code', 0)
+                response.message = result.get('message', '')
+                response.data.clear()
+                print("Returning empty response due to error in list_agents")
+                return response
+
+            print("ListAgents result:", result)
+            response = pb2.ListAgentsResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            print("\n\nProcessing agents:")
+            if 'data' in result:
+                for agent_data in result['data']:
+                    agent = pb2.Agent()
+                    agent.id = str(agent_data.get('id', '')) 
+                    agent.title = str(agent_data.get('title', ''))
+                    agent.avatar = str(agent_data.get('avatar', ''))
+                    agent.canvas_type = str(agent_data.get('canvas_type', ''))
+                    agent.description = str(agent_data.get('description', ''))
+                    agent.dsl = str(agent_data.get('dsl', ''))
+                    agent.create_date = str(agent_data.get('create_date', ''))
+                    agent.create_time = int(agent_data.get('create_time', 0))
+                    agent.update_date = str(agent_data.get('update_date', ''))
+                    agent.update_time = int(agent_data.get('update_time', 0))
+                    agent.user_id = str(agent_data.get('user_id', ''))
+                    response.data.append(agent)
+            print("Finished processing agents",response)
+            return response
+            
+        except Exception as e:
+            print(f"Exception in ListAgents: {e}",repr(e))
+            return pb2.ListAgentsResponse(code=500, message=str(e))
+
+    async def CreateAgent(self, request, context):
+        """Create agent"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.title:
+                data['title'] = request.title
+            if request.description:
+                data['description'] = request.description
+            if request.dsl:
+                data['dsl'] = request.dsl
+            
+            result = await client.create_agent(data)
+            
+            print(f"CreateAgent result: {result}")
+            return pb2.CreateAgentResponse(
+                code=result.get('code', 0),
+                message=result.get('message', ''),
+                data=result.get('data', False)
+            )
+            
+        except Exception as e:
+            print(f"Exception in CreateAgent: {e}")
+            return pb2.CreateAgentResponse(code=500, message=str(e), data=False)
+
+    async def UpdateAgent(self, request, context):
+        """Update agent"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.title:
+                data['title'] = request.title
+            if request.description:
+                data['description'] = request.description
+            if request.dsl:
+                data['dsl'] = request.dsl
+            
+            result = await client.update_agent(request.agent_id, data)
+            
+            print(f"UpdateAgent result: {result}")
+            return pb2.UpdateAgentResponse(
+                code=result.get('code', 0),
+                message=result.get('message', ''),
+                data=result.get('data', False)
+            )
+            
+        except Exception as e:
+            print(f"Exception in UpdateAgent: {e}")
+            return pb2.UpdateAgentResponse(code=500, message=str(e), data=False)
+
+    async def DeleteAgent(self, request, context):
+        """Delete agent"""
+        try:
+            client = await self._get_client()
+            
+            result = await client.delete_agent(request.agent_id)
+            
+            print(f"DeleteAgent result: {result}")
+            return pb2.DeleteAgentResponse(
+                code=result.get('code', 0),
+                message=result.get('message', ''),
+                data=result.get('data', False)
+            )
+            
+        except Exception as e:
+            print(f"Exception in DeleteAgent: {e}")
+            return pb2.DeleteAgentResponse(code=500, message=str(e), data=False)
 
 
 async def serve():

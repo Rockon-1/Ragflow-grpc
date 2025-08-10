@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  ragflow-grpc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragflow-grpc-server
+    ports:
+      - "50051:50051"
+    environment:
+      - RAGFLOW_BASE_URL=${RAGFLOW_BASE_URL:-http://host.docker.internal:80}
+      - API_KEY=${API_KEY:-ragflow-QzMzk4NzE0NzQ2ZDExZjBhMDgzYTZiOW}
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    restart: unless-stopped
+    networks:
+      - ragflow-network
+    # Mount config file if you want to override configuration
+    # volumes:
+    #   - ./grpc_ragflow_server/config.py:/app/grpc_ragflow_server/config.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50051'); channel.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  ragflow-network:
+    driver: bridge

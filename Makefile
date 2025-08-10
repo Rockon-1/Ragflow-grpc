@@ -1,8 +1,11 @@
 
-.PHONY: setup install-uv check-deps clone-ragflow run-docker protobuf install-deps
+.PHONY: setup setup-without-ragflow install-uv check-deps clone-ragflow run-docker protobuf install-deps docker-build docker-run docker-stop docker-logs
 
 setup: install-uv check-deps clone-ragflow run-docker install-deps protobuf ## Full project setup
 	@echo "Project setup complete!"
+
+setup-without-ragflow: install-uv check-deps install-deps protobuf ## Setup without cloning ragflow or running docker (useful when docker is already running)
+	@echo "Project setup complete (without ragflow)!"
 
 install-uv: ## Install uv package manager if not present
 ifeq ($(OS),Windows_NT)
@@ -67,3 +70,17 @@ ifeq ($(OS),Windows_NT)
 else
 	@test -f pyproject.toml && uv sync || (test -f requirements.txt && (uv pip install -r requirements.txt && uv pip install -e .) || echo "No pyproject.toml or requirements.txt found")
 endif
+
+docker-build: ## Build the gRPC server Docker image
+	docker build -t ragflow-grpc-server .
+
+docker-run: ## Run the gRPC server in Docker container
+	docker compose up -d
+
+docker-stop: ## Stop the gRPC server Docker container
+	docker compose down
+
+docker-logs: ## View logs from the Docker container
+	docker compose logs -f ragflow-grpc-server
+
+docker-build-and-run: docker-build docker-run ## Build and run the Docker container

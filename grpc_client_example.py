@@ -368,12 +368,14 @@ class RAGFlowGRPCClient:
         try:
             response = await self.stub.ListAgents(request)
             agents = []
+            if response.code >= 400 or (response.code < 200 and response.code != 0):
+                logger.error(f"Error listing agents: {response.message}")
+                return {"error": response.message, "code": response.code}
             for agent in response.data:
                 agents.append({
                     "id": agent.id,
-                    "name": agent.name,
+                    "title": agent.title,
                     "description": agent.description,
-                    "status": agent.status,
                     "create_date": agent.create_date
                 })
             
@@ -486,10 +488,10 @@ class RAGFlowGRPCExamples:
         try:
             # Retrieve chunks for a sample question
             chunks_result = await self.client.retrieve_chunks(
-                question="What is machine learning and artificial intelligence?",
+                question="What is task?",
                 dataset_ids=dataset_ids[:2],  # Use first 2 datasets
                 top_k=5,
-                similarity_threshold=0.7
+                similarity_threshold=0.2
             )
             logger.info(f"Retrieved chunks: {json.dumps(chunks_result, indent=2)}")
         except Exception as e:
@@ -507,7 +509,7 @@ class RAGFlowGRPCExamples:
             logger.info("Starting streaming chat completion...")
             chunk_count = 0
             async for chunk in self.client.create_chat_completion(
-                chat_id="test-grpc-chat",
+                chat_id="2e5803da761011f0a638ea9746a4f026",
                 model="deepseek-chat",
                 messages=messages,
                 stream=True
@@ -529,9 +531,10 @@ class RAGFlowGRPCExamples:
         try:
             # List available agents
             agents = await self.client.list_agents()
+            print("Available agents:", agents)
             logger.info(f"Available agents: {json.dumps(agents, indent=2)}")
         except Exception as e:
-            logger.error(f"Agent operations failed: {e}")
+            logger.error(f"Agent operations failed: {e}",repr(e))
 
 
 async def main():
@@ -549,7 +552,7 @@ async def main():
             # Test chunk retrieval (using any available datasets)
             datasets = await examples.client.list_datasets()
             if datasets.get('code') == 0 and datasets.get('data'):
-                dataset_ids = [ds['id'] for ds in datasets['data']]
+                dataset_ids = [ds['id'] for ds in datasets['data'] if ds['chunk_count'] != 0]
                 await examples.test_chunk_retrieval(dataset_ids)
             
             # Test agent operations
