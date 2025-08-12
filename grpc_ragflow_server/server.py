@@ -9,6 +9,7 @@ from ragflow_client import RAGFlowClient, RAGFlowConnectionError
 from config import GRPC_HOST, GRPC_PORT
 
 
+
 class RagServicesServicer(pb2_grpc.RagServicesServicer):
     """Async gRPC servicer for RAGFlow API"""
     
@@ -202,15 +203,18 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
         """Delete datasets"""
         try:
             client = await self._get_client()
-            
             data = {}
             if request.ids:
+                # request.ids is already a repeated field (list), no need to convert
                 data['ids'] = list(request.ids)
             else:
                 data['ids'] = None  # Delete all
-            
+
+            print(f"DeleteDatasets request: ",data)
+
             result = await client.delete_datasets(data)
-            
+            print(f"DeleteDatasets response: ",result)
+
             return pb2.DeleteDatasetsResponse(
                 code=result.get('code', 0),
                 message=result.get('message', '')
@@ -548,8 +552,207 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
         except Exception as e:
             return pb2.DeleteDocumentsResponse(code=500, message=str(e))
     
-    # Add implementations for other methods following the same pattern...
-    # For brevity, I'll show the structure for a few more key methods
+    async def ParseDocuments(self, request, context):
+        """Parse documents"""
+        try:
+            client = await self._get_client()
+            
+            data = {
+                'document_ids': list(request.document_ids)
+            }
+            
+            result = await client.parse_documents(request.dataset_id, data)
+            
+            return pb2.ParseDocumentsResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.ParseDocumentsResponse(code=500, message=str(e))
+    
+    async def StopParsingDocuments(self, request, context):
+        """Stop parsing documents"""
+        try:
+            client = await self._get_client()
+            
+            data = {
+                'document_ids': list(request.document_ids)
+            }
+            
+            result = await client.stop_parsing_documents(request.dataset_id, data)
+            
+            return pb2.StopParsingDocumentsResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.StopParsingDocumentsResponse(code=500, message=str(e))
+    
+    # Chunk Management implementations
+    async def AddChunk(self, request, context):
+        """Add chunk"""
+        try:
+            client = await self._get_client()
+            
+            data = {
+                'content': request.content
+            }
+            
+            if request.important_keywords:
+                data['important_keywords'] = list(request.important_keywords)
+            
+            if request.questions:
+                data['questions'] = list(request.questions)
+            
+            result = await client.add_chunk(request.dataset_id, request.document_id, data)
+            print("\n* Add Chunk operation done, Ragflow server response",result)
+            response = pb2.AddChunkResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                chunk_data = result['data']
+                if 'chunk' in chunk_data:
+                    chunk = chunk_data['chunk']
+                    response.data.chunk.id = chunk.get('id', '')
+                    response.data.chunk.content = chunk.get('content', '')
+                    response.data.chunk.document_id = chunk.get('document_id', '')
+                    response.data.chunk.important_keywords = ",".join(chunk.get('important_keywords', []))
+                    response.data.chunk.available = chunk.get('available', True)
+                    response.data.chunk.create_time = chunk.get('create_time', '')
+                    response.data.chunk.create_timestamp = chunk.get('create_timestamp', 0.0)
+                    response.data.chunk.dataset_id = chunk.get('dataset_id', '')
+                    if chunk.get('questions'):
+                        response.data.chunk.questions.extend(chunk['questions'])
+            print("\n\n* Returning Add Chunk operation response: ",response)
+            return response
+            
+        except Exception as e:
+            print("\n\n* Got Exception Add Chunk operation error response: ", e)
+            return pb2.AddChunkResponse(code=500, message=str(e))
+    
+    async def ListChunks(self, request, context):
+        """List chunks"""
+        try:
+            client = await self._get_client()
+            
+            params = {}
+            if request.keywords:
+                params['keywords'] = request.keywords
+            if request.page:
+                params['page'] = request.page
+            if request.page_size:
+                params['page_size'] = request.page_size
+            if request.id:
+                params['id'] = request.id
+            
+            result = await client.list_chunks(request.dataset_id, request.document_id, params)
+            
+            response = pb2.ListChunksResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                data = result['data']
+                
+                # Set total count
+                response.data.total = data.get('total', 0)
+                
+                # Set document info
+                if 'doc' in data and data['doc']:
+                    doc = data['doc']
+                    response.data.doc.id = doc.get('id', '')
+                    response.data.doc.name = doc.get('name', '')
+                    response.data.doc.location = doc.get('location', '')
+                    response.data.doc.type = doc.get('type', '')
+                    response.data.doc.size = doc.get('size', 0)
+                    response.data.doc.thumbnail = doc.get('thumbnail', '')
+                    response.data.doc.chunk_method = doc.get('chunk_method', '')
+                    response.data.doc.parser_config = str(doc.get('parser_config', {}))
+                    response.data.doc.run = doc.get('run', '')
+                    response.data.doc.status = doc.get('status', '')
+                    response.data.doc.progress_msg = doc.get('progress_msg', '')
+                    response.data.doc.progress = doc.get('progress', 0.0)
+                    response.data.doc.process_duration = float(doc.get('process_duration', 0.0))
+                    response.data.doc.process_begin_at = str(doc.get('process_begin_at', ''))
+                    response.data.doc.chunk_count = doc.get('chunk_count', 0)
+                    response.data.doc.token_count = doc.get('token_count', 0)
+                    response.data.doc.dataset_id = doc.get('dataset_id', '')
+                    response.data.doc.created_by = doc.get('created_by', '')
+                    response.data.doc.create_date = doc.get('create_date', '')
+                    response.data.doc.create_time = doc.get('create_time', 0)
+                    response.data.doc.update_date = doc.get('update_date', '')
+                    response.data.doc.update_time = doc.get('update_time', 0)
+                    response.data.doc.source_type = doc.get('source_type', '')
+                # Set chunks
+                if 'chunks' in data and data['chunks']:
+                    for chunk_data in data['chunks']:
+                        chunk = response.data.chunks.add()
+                        chunk.id = chunk_data.get('id', '')
+                        chunk.content = chunk_data.get('content', '')
+                        chunk.docnm_kwd = chunk_data.get('docnm_kwd', '')
+                        chunk.document_id = chunk_data.get('document_id', '')
+                        chunk.image_id = chunk_data.get('image_id', '')
+                        chunk.important_keywords = str(chunk_data.get('important_keywords', ''))
+                        chunk.available = chunk_data.get('available', True)
+                        if chunk_data.get('positions'):
+                            chunk.positions.extend(chunk_data['positions'])
+                        if chunk_data.get('questions'):
+                            chunk.questions.extend(chunk_data['questions'])
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error in ListChunks: {e}", repr(e))
+            return pb2.ListChunksResponse(code=500, message=str(e))
+    
+    async def DeleteChunks(self, request, context):
+        """Delete chunks"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+           
+            # Convert protobuf repeated field to Python list
+            chunk_ids_list = list(request.chunk_ids)
+            data["chunk_ids"] = chunk_ids_list
+            print("DeleteChunks request data:", data)
+            result = await client.delete_chunks(request.dataset_id, request.document_id, data)
+            print("DeleteChunks API result:", result)
+            return pb2.DeleteChunksResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.DeleteChunksResponse(code=500, message=str(e))
+    
+    async def UpdateChunk(self, request, context):
+        """Update chunk"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.content:
+                data['content'] = request.content
+            if request.important_keywords:
+                data['important_keywords'] = list(request.important_keywords)
+            
+            data['available'] = request.available if hasattr(request, 'available') else True
+            print("UpdateChunk request data:", data)
+
+            result = await client.update_chunk(request.dataset_id, request.document_id, request.chunk_id, data)
+            
+            return pb2.UpdateChunkResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.UpdateChunkResponse(code=500, message=str(e))
+    
     
     async def RetrieveChunks(self, request, context):
         """Retrieve chunks"""
@@ -852,6 +1055,555 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
         except Exception as e:
             print(f"Exception in DeleteAgent: {e}")
             return pb2.DeleteAgentResponse(code=500, message=str(e), data=False)
+
+    # Chat Assistant Management
+    async def CreateChatAssistant(self, request, context):
+        """Create chat assistant"""
+        try:
+            client = await self._get_client()
+            
+            data = {
+                'name': request.name
+            }
+            
+            if request.avatar:
+                data['avatar'] = request.avatar
+            if request.dataset_ids:
+                data['dataset_ids'] = list(request.dataset_ids)
+            
+            # Handle LLM config
+            if request.llm:
+                llm_config = {}
+                if request.llm.model_name:
+                    llm_config['model_name'] = request.llm.model_name
+                if request.llm.temperature:
+                    llm_config['temperature'] = request.llm.temperature
+                if request.llm.top_p:
+                    llm_config['top_p'] = request.llm.top_p
+                if request.llm.presence_penalty:
+                    llm_config['presence_penalty'] = request.llm.presence_penalty
+                if request.llm.frequency_penalty:
+                    llm_config['frequency_penalty'] = request.llm.frequency_penalty
+                data['llm'] = llm_config
+            
+            # Handle prompt config
+            if request.prompt:
+                prompt_config = {}
+                if request.prompt.similarity_threshold:
+                    prompt_config['similarity_threshold'] = request.prompt.similarity_threshold
+                if request.prompt.keywords_similarity_weight:
+                    prompt_config['keywords_similarity_weight'] = request.prompt.keywords_similarity_weight
+                if request.prompt.top_n:
+                    prompt_config['top_n'] = request.prompt.top_n
+                if request.prompt.rerank_model:
+                    prompt_config['rerank_model'] = request.prompt.rerank_model
+                if request.prompt.top_k:
+                    prompt_config['top_k'] = request.prompt.top_k
+                if request.prompt.empty_response:
+                    prompt_config['empty_response'] = request.prompt.empty_response
+                if request.prompt.opener:
+                    prompt_config['opener'] = request.prompt.opener
+                if hasattr(request.prompt, 'show_quote'):
+                    prompt_config['show_quote'] = request.prompt.show_quote
+                if request.prompt.prompt:
+                    prompt_config['prompt'] = request.prompt.prompt
+                
+                # Handle variables
+                if request.prompt.variables:
+                    variables = []
+                    for var in request.prompt.variables:
+                        variables.append({
+                            'key': var.key,
+                            'optional': var.optional
+                        })
+                    prompt_config['variables'] = variables
+                
+                data['prompt'] = prompt_config
+            
+            result = await client.create_chat_assistant(data)
+            
+            response = pb2.CreateChatAssistantResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                assistant_data = result['data']
+                response.data.id = assistant_data.get('id', '')
+                response.data.name = assistant_data.get('name', '')
+                response.data.avatar = assistant_data.get('avatar', '')
+                response.data.description = assistant_data.get('description', '')
+                response.data.do_refer = assistant_data.get('do_refer', '')
+                response.data.language = assistant_data.get('language', '')
+                response.data.prompt_type = assistant_data.get('prompt_type', '')
+                response.data.status = assistant_data.get('status', '')
+                response.data.tenant_id = assistant_data.get('tenant_id', '')
+                response.data.top_k = assistant_data.get('top_k', 0)
+                response.data.create_date = assistant_data.get('create_date', '')
+                response.data.create_time = assistant_data.get('create_time', 0)
+                response.data.update_date = assistant_data.get('update_date', '')
+                response.data.update_time = assistant_data.get('update_time', 0)
+                
+                if assistant_data.get('dataset_ids'):
+                    response.data.dataset_ids.extend(assistant_data['dataset_ids'])
+                
+                # Handle LLM config in response
+                if assistant_data.get('llm'):
+                    llm = assistant_data['llm']
+                    response.data.llm.model_name = llm.get('model_name', '')
+                    response.data.llm.temperature = llm.get('temperature', 0.0)
+                    response.data.llm.top_p = llm.get('top_p', 0.0)
+                    response.data.llm.presence_penalty = llm.get('presence_penalty', 0.0)
+                    response.data.llm.frequency_penalty = llm.get('frequency_penalty', 0.0)
+                
+                # Handle prompt config in response
+                if assistant_data.get('prompt'):
+                    prompt = assistant_data['prompt']
+                    response.data.prompt.similarity_threshold = prompt.get('similarity_threshold', 0.0)
+                    response.data.prompt.keywords_similarity_weight = prompt.get('keywords_similarity_weight', 0.0)
+                    response.data.prompt.top_n = prompt.get('top_n', 0)
+                    response.data.prompt.rerank_model = prompt.get('rerank_model', '')
+                    response.data.prompt.empty_response = prompt.get('empty_response', '')
+                    response.data.prompt.opener = prompt.get('opener', '')
+                    response.data.prompt.prompt = prompt.get('prompt', '')
+                    
+                    if prompt.get('variables'):
+                        for var in prompt['variables']:
+                            var_obj = response.data.prompt.variables.add()
+                            var_obj.key = var.get('key', '')
+                            var_obj.optional = var.get('optional', False)
+            
+            return response
+            
+        except Exception as e:
+            return pb2.CreateChatAssistantResponse(code=500, message=str(e))
+    
+    async def UpdateChatAssistant(self, request, context):
+        """Update chat assistant"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.name:
+                data['name'] = request.name
+            if request.avatar:
+                data['avatar'] = request.avatar
+            if request.dataset_ids:
+                data['dataset_ids'] = list(request.dataset_ids)
+            
+            # Handle LLM config
+            if request.llm:
+                llm_config = {}
+                if request.llm.model_name:
+                    llm_config['model_name'] = request.llm.model_name
+                if request.llm.temperature:
+                    llm_config['temperature'] = request.llm.temperature
+                if request.llm.top_p:
+                    llm_config['top_p'] = request.llm.top_p
+                if request.llm.presence_penalty:
+                    llm_config['presence_penalty'] = request.llm.presence_penalty
+                if request.llm.frequency_penalty:
+                    llm_config['frequency_penalty'] = request.llm.frequency_penalty
+                data['llm'] = llm_config
+            
+            # Handle prompt config
+            if request.prompt:
+                prompt_config = {}
+                if request.prompt.similarity_threshold:
+                    prompt_config['similarity_threshold'] = request.prompt.similarity_threshold
+                if request.prompt.keywords_similarity_weight:
+                    prompt_config['keywords_similarity_weight'] = request.prompt.keywords_similarity_weight
+                if request.prompt.top_n:
+                    prompt_config['top_n'] = request.prompt.top_n
+                if request.prompt.rerank_model:
+                    prompt_config['rerank_model'] = request.prompt.rerank_model
+                if request.prompt.top_k:
+                    prompt_config['top_k'] = request.prompt.top_k
+                if request.prompt.empty_response:
+                    prompt_config['empty_response'] = request.prompt.empty_response
+                if request.prompt.opener:
+                    prompt_config['opener'] = request.prompt.opener
+                if hasattr(request.prompt, 'show_quote'):
+                    prompt_config['show_quote'] = request.prompt.show_quote
+                if request.prompt.prompt:
+                    prompt_config['prompt'] = request.prompt.prompt
+                
+                # Handle variables
+                if request.prompt.variables:
+                    variables = []
+                    for var in request.prompt.variables:
+                        variables.append({
+                            'key': var.key,
+                            'optional': var.optional
+                        })
+                    prompt_config['variables'] = variables
+                
+                data['prompt'] = prompt_config
+            
+            result = await client.update_chat_assistant(request.chat_id, data)
+            
+            return pb2.UpdateChatAssistantResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.UpdateChatAssistantResponse(code=500, message=str(e))
+    
+    async def DeleteChatAssistants(self, request, context):
+        """Delete chat assistants"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.ids:
+                data['ids'] = list(request.ids)
+            
+            result = await client.delete_chat_assistants(data)
+            
+            return pb2.DeleteChatAssistantsResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.DeleteChatAssistantsResponse(code=500, message=str(e))
+    
+    async def ListChatAssistants(self, request, context):
+        """List chat assistants"""
+        try:
+            client = await self._get_client()
+            
+            params = {}
+            if request.page:
+                params['page'] = request.page
+            if request.page_size:
+                params['page_size'] = request.page_size
+            if request.orderby:
+                params['orderby'] = request.orderby
+            if request.desc:
+                params['desc'] = request.desc
+            if request.id:
+                params['id'] = request.id
+            if request.name:
+                params['name'] = request.name
+            
+            result = await client.list_chat_assistants(params)
+            
+            response = pb2.ListChatAssistantsResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                for assistant_data in result['data']:
+                    assistant = response.data.add()
+                    assistant.id = assistant_data.get('id', '')
+                    assistant.name = assistant_data.get('name', '')
+                    assistant.avatar = assistant_data.get('avatar', '')
+                    assistant.description = assistant_data.get('description', '')
+                    assistant.do_refer = assistant_data.get('do_refer', '')
+                    assistant.language = assistant_data.get('language', '')
+                    assistant.prompt_type = assistant_data.get('prompt_type', '')
+                    assistant.status = assistant_data.get('status', '')
+                    assistant.tenant_id = assistant_data.get('tenant_id', '')
+                    assistant.top_k = assistant_data.get('top_k', 0)
+                    assistant.create_date = assistant_data.get('create_date', '')
+                    assistant.create_time = assistant_data.get('create_time', 0)
+                    assistant.update_date = assistant_data.get('update_date', '')
+                    assistant.update_time = assistant_data.get('update_time', 0)
+                    
+                    if assistant_data.get('dataset_ids'):
+                        assistant.dataset_ids.extend(assistant_data['dataset_ids'])
+                    
+                    # Handle LLM config
+                    if assistant_data.get('llm'):
+                        llm = assistant_data['llm']
+                        assistant.llm.model_name = llm.get('model_name', '')
+                        assistant.llm.temperature = llm.get('temperature', 0.0)
+                        assistant.llm.top_p = llm.get('top_p', 0.0)
+                        assistant.llm.presence_penalty = llm.get('presence_penalty', 0.0)
+                        assistant.llm.frequency_penalty = llm.get('frequency_penalty', 0.0)
+                    
+                    # Handle prompt config
+                    if assistant_data.get('prompt'):
+                        prompt = assistant_data['prompt']
+                        assistant.prompt.similarity_threshold = prompt.get('similarity_threshold', 0.0)
+                        assistant.prompt.keywords_similarity_weight = prompt.get('keywords_similarity_weight', 0.0)
+                        assistant.prompt.top_n = prompt.get('top_n', 0)
+                        assistant.prompt.rerank_model = prompt.get('rerank_model', '')
+                        assistant.prompt.empty_response = prompt.get('empty_response', '')
+                        assistant.prompt.opener = prompt.get('opener', '')
+                        assistant.prompt.show_quote = prompt.get('show_quote', False)
+                        assistant.prompt.prompt = prompt.get('prompt', '')
+                        
+                        if prompt.get('variables'):
+                            for var in prompt['variables']:
+                                var_obj = assistant.prompt.variables.add()
+                                var_obj.key = var.get('key', '')
+                                var_obj.optional = var.get('optional', False)
+            
+            return response
+            
+        except Exception as e:
+            return pb2.ListChatAssistantsResponse(code=500, message=str(e))
+
+    # Session Management
+    async def CreateSessionWithChatAssistant(self, request, context):
+        """Create session with chat assistant"""
+        try:
+            client = await self._get_client()
+            
+            data = {
+                'name': request.name
+            }
+            
+            if request.user_id:
+                data['user_id'] = request.user_id
+            
+            result = await client.create_session_with_chat_assistant(request.chat_id, data)
+            
+            response = pb2.CreateSessionWithChatAssistantResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                session_data = result['data']
+                response.data.id = session_data.get('id', '')
+                response.data.chat_id = session_data.get('chat_id', '')
+                response.data.name = session_data.get('name', '')
+                response.data.create_date = session_data.get('create_date', '')
+                response.data.create_time = session_data.get('create_time', 0)
+                response.data.update_date = session_data.get('update_date', '')
+                response.data.update_time = session_data.get('update_time', 0)
+                
+                if session_data.get('messages'):
+                    for msg in session_data['messages']:
+                        message = response.data.messages.add()
+                        message.role = msg.get('role', '')
+                        message.content = msg.get('content', '')
+            
+            return response
+            
+        except Exception as e:
+            return pb2.CreateSessionWithChatAssistantResponse(code=500, message=str(e))
+    
+    async def UpdateChatAssistantSession(self, request, context):
+        """Update chat assistant session"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.name:
+                data['name'] = request.name
+            if request.user_id:
+                data['user_id'] = request.user_id
+            
+            result = await client.update_chat_assistant_session(request.chat_id, request.session_id, data)
+            
+            return pb2.UpdateChatAssistantSessionResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.UpdateChatAssistantSessionResponse(code=500, message=str(e))
+    
+    async def ListChatAssistantSessions(self, request, context):
+        """List chat assistant sessions"""
+        try:
+            client = await self._get_client()
+            
+            params = {}
+            if request.page:
+                params['page'] = request.page
+            if request.page_size:
+                params['page_size'] = request.page_size
+            if request.orderby:
+                params['orderby'] = request.orderby
+            if request.desc:
+                params['desc'] = request.desc
+            if request.name:
+                params['name'] = request.name
+            if request.id:
+                params['id'] = request.id
+            if request.user_id:
+                params['user_id'] = request.user_id
+            
+            result = await client.list_chat_assistant_sessions(request.chat_id, params)
+            
+            response = pb2.ListChatAssistantSessionsResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                for session_data in result['data']:
+                    session = response.data.add()
+                    session.id = session_data.get('id', '')
+                    session.chat_id = session_data.get('chat', '')
+                    session.name = session_data.get('name', '')
+                    session.create_date = session_data.get('create_date', '')
+                    session.create_time = session_data.get('create_time', 0)
+                    session.update_date = session_data.get('update_date', '')
+                    session.update_time = session_data.get('update_time', 0)
+                    
+                    if session_data.get('messages'):
+                        for msg in session_data['messages']:
+                            message = session.messages.add()
+                            message.role = msg.get('role', '')
+                            message.content = msg.get('content', '')
+            
+            return response
+            
+        except Exception as e:
+            return pb2.ListChatAssistantSessionsResponse(code=500, message=str(e))
+    
+    async def DeleteChatAssistantSessions(self, request, context):
+        """Delete chat assistant sessions"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.ids:
+                data['ids'] = list(request.ids)
+            
+            result = await client.delete_chat_assistant_sessions(request.chat_id, data)
+            
+            return pb2.DeleteChatAssistantSessionsResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.DeleteChatAssistantSessionsResponse(code=500, message=str(e))
+    
+    async def CreateSessionWithAgent(self, request, context):
+        """Create session with agent"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            
+            # Add parameters from request
+            for key, value in request.parameters.items():
+                data[key] = value
+            
+            params = {}
+            if request.user_id:
+                params['user_id'] = request.user_id
+            
+            result = await client.create_session_with_agent(request.agent_id, data, params)
+            
+            response = pb2.CreateSessionWithAgentResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                session_data = result['data']
+                response.data.id = session_data.get('id', '')
+                response.data.agent_id = session_data.get('agent_id', '')
+                response.data.dsl = str(session_data.get('dsl', ''))
+                response.data.source = session_data.get('source', '')
+                response.data.user_id = session_data.get('user_id', '')
+                
+                if session_data.get('message'):
+                    for msg in session_data['message']:
+                        message = response.data.message.add()
+                        message.role = msg.get('role', '')
+                        message.content = msg.get('content', '')
+            
+            return response
+            
+        except Exception as e:
+            return pb2.CreateSessionWithAgentResponse(code=500, message=str(e))
+    
+    async def ListAgentSessions(self, request, context):
+        """List agent sessions"""
+        try:
+            client = await self._get_client()
+            
+            params = {}
+            if request.page:
+                params['page'] = request.page
+            if request.page_size:
+                params['page_size'] = request.page_size
+            if request.orderby:
+                params['orderby'] = request.orderby
+            if request.desc:
+                params['desc'] = request.desc
+            if request.id:
+                params['id'] = request.id
+            if request.user_id:
+                params['user_id'] = request.user_id
+            if hasattr(request, 'dsl'):
+                params['dsl'] = request.dsl
+            
+            result = await client.list_agent_sessions(request.agent_id, params)
+            
+            response = pb2.ListAgentSessionsResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                for session_data in result['data']:
+                    session = response.data.add()
+                    session.id = session_data.get('id', '')
+                    session.agent_id = session_data.get('agent_id', '')
+                    session.dsl = str(session_data.get('dsl', ''))
+                    session.source = session_data.get('source', '')
+                    session.user_id = session_data.get('user_id', '')
+                    
+                    if session_data.get('message'):
+                        for msg in session_data['message']:
+                            message = session.message.add()
+                            message.role = msg.get('role', '')
+                            message.content = msg.get('content', '')
+            
+            return response
+            
+        except Exception as e:
+            return pb2.ListAgentSessionsResponse(code=500, message=str(e))
+    
+    async def DeleteAgentSessions(self, request, context):
+        """Delete agent sessions"""
+        try:
+            client = await self._get_client()
+            
+            data = {}
+            if request.ids:
+                data['ids'] = list(request.ids)
+            
+            result = await client.delete_agent_sessions(request.agent_id, data)
+            
+            return pb2.DeleteAgentSessionsResponse(
+                code=result.get('code', 0),
+                message=result.get('message', '')
+            )
+            
+        except Exception as e:
+            return pb2.DeleteAgentSessionsResponse(code=500, message=str(e))
+    
+    async def GenerateRelatedQuestions(self, request, context):
+        """Generate related questions"""
+        try:
+            client = await self._get_client()
+            
+            data = {
+                'question': request.question,
+                'industry': request.industry
+            }
+            
+            result = await client.generate_related_questions(data)
+            
+            response = pb2.GenerateRelatedQuestionsResponse()
+            response.code = result.get('code', 0)
+            response.message = result.get('message', '')
+            
+            if 'data' in result and result['data']:
+                response.data.extend(result['data'])
+            
+            return response
+            
+        except Exception as e:
+            return pb2.GenerateRelatedQuestionsResponse(code=500, message=str(e))
 
 
 async def serve():

@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Union, AsyncIterator
 from config import RAGFLOW_BASE_URL, API_KEY
 
 
+
 class RAGFlowConnectionError(Exception):
     """Raised when RAGFlow service is not accessible"""
     pass

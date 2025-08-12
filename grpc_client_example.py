@@ -17,7 +17,7 @@ from grpc_ragflow_server.config import GRPC_HOST, GRPC_PORT
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ class RAGFlowGRPCClient:
         
         try:
             response = await self.stub.UpdateDataset(request)
-            logger.info(f"Updated dataset {dataset_id}")
+            logger.debug(f"Updated dataset {dataset_id}")
             return {
                 "code": response.code,
                 "message": response.message
@@ -155,11 +155,12 @@ class RAGFlowGRPCClient:
     
     async def delete_datasets(self, dataset_ids: List[str]) -> Dict:
         """Delete datasets by IDs"""
-        request = pb2.DeleteDatasetsRequest(ids=dataset_ids)
+        print("Deleting datasets with IDs:", dataset_ids)
+        request = pb2.DeleteDatasetsRequest(ids=[dataset_ids])
         
         try:
             response = await self.stub.DeleteDatasets(request)
-            logger.info(f"Deleted {len(dataset_ids)} datasets")
+            logger.debug(f"Got server response for deleting datasets: {dataset_ids}")
             return {
                 "code": response.code,
                 "message": response.message
@@ -258,7 +259,179 @@ class RAGFlowGRPCClient:
             logger.error(f"Failed to list documents: {e}")
             return {"error": str(e), "code": e.code()}
     
+    async def parse_documents(self, dataset_id: str, document_ids: List[str]) -> Dict:
+        """Parse documents in a dataset"""
+        request = pb2.ParseDocumentsRequest(
+            dataset_id=dataset_id,
+            document_ids=document_ids
+        )
+        
+        try:
+            response = await self.stub.ParseDocuments(request)
+            logger.info(f"Started parsing {len(document_ids)} documents in dataset {dataset_id}")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to parse documents: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def stop_parsing_documents(self, dataset_id: str, document_ids: List[str]) -> Dict:
+        """Stop parsing documents in a dataset"""
+        request = pb2.StopParsingDocumentsRequest(
+            dataset_id=dataset_id,
+            document_ids=document_ids
+        )
+        
+        try:
+            response = await self.stub.StopParsingDocuments(request)
+            logger.info(f"Stopped parsing {len(document_ids)} documents in dataset {dataset_id}")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to stop parsing documents: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def delete_documents(self, dataset_id: str, document_ids: List[str]) -> Dict:
+        """Delete documents from a dataset"""
+        request = pb2.DeleteDocumentsRequest(
+            dataset_id=dataset_id,
+            ids=document_ids
+        )
+        
+        try:
+            response = await self.stub.DeleteDocuments(request)
+            logger.info(f"Deleted {len(document_ids)} documents from dataset {dataset_id}")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to delete documents: {e}")
+            return {"error": str(e), "code": e.code()}
+    
     # Chunk Management Methods
+    async def add_chunk(self, dataset_id: str, document_id: str, content: str, 
+                       important_keywords: List[str] = None, questions: List[str] = None) -> Dict:
+        """Add a chunk to a document"""
+        request = pb2.AddChunkRequest(
+            dataset_id=dataset_id,
+            document_id=document_id,
+            content=content
+        )
+        
+        if important_keywords:
+            request.important_keywords.extend(important_keywords)
+        if questions:
+            request.questions.extend(questions)
+        
+        try:
+            response = await self.stub.AddChunk(request)
+            logger.info(f"Added chunk to document {document_id} in dataset {dataset_id}")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": {
+                    "chunk_id": response.data.chunk.id,
+                    "content": response.data.chunk.content,
+                    "create_time": response.data.chunk.create_time
+                }
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to add chunk: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def list_chunks(self, dataset_id: str, document_id: str, page: int = 1, 
+                         page_size: int = 10, keywords: str = "") -> Dict:
+        """List chunks in a document"""
+        request = pb2.ListChunksRequest(
+            dataset_id=dataset_id,
+            document_id=document_id,
+            page=page,
+            page_size=page_size,
+            keywords=keywords
+        )
+        
+        try:
+            response = await self.stub.ListChunks(request)
+            chunks = []
+            for chunk in response.data.chunks:
+                chunks.append({
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "available": chunk.available,
+                    "create_time": chunk.create_time,
+                    "important_keywords": chunk.important_keywords
+                })
+            
+            logger.info(f"Got {len(chunks)} chunks from list_chunks {document_id}")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": {
+                    "chunks": chunks,
+                    "total": response.data.total,
+                    "document": {
+                        "id": response.data.doc.id,
+                        "name": response.data.doc.name,
+                        "chunk_count": response.data.doc.chunk_count
+                    }
+                }
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to list chunks: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def update_chunk(self, dataset_id: str, document_id: str, chunk_id: str,
+                          content: str = None, important_keywords: List[str] = None,
+                          available: bool = None) -> Dict:
+        """Update a chunk"""
+        request = pb2.UpdateChunkRequest(
+            dataset_id=dataset_id,
+            document_id=document_id,
+            chunk_id=chunk_id
+        )
+        
+        if content:
+            request.content = content
+        if important_keywords:
+            request.important_keywords.extend(important_keywords)
+        if available is not None:
+            request.available = available
+        
+        try:
+            response = await self.stub.UpdateChunk(request)
+            logger.info(f"Updated chunk {chunk_id} in document {document_id}")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to update chunk: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def delete_chunks(self, dataset_id: str, document_id: str, chunk_ids: List[str]) -> Dict:
+        """Delete chunks from a document"""
+        request = pb2.DeleteChunksRequest(
+            dataset_id=dataset_id,
+            document_id=document_id,
+            chunk_ids=chunk_ids
+        )
+        
+        try:
+            response = await self.stub.DeleteChunks(request)
+            logger.info(f"Deleted {len(chunk_ids)} chunks from document {document_id}")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to delete chunks: {e}")
+            return {"error": str(e), "code": e.code()}
+    
     async def retrieve_chunks(self, question: str, dataset_ids: List[str], 
                             top_k: int = 5, similarity_threshold: float = 0.7) -> Dict:
         """Retrieve relevant chunks for a question"""
@@ -292,6 +465,308 @@ class RAGFlowGRPCClient:
             }
         except grpc.RpcError as e:
             logger.error(f"Failed to retrieve chunks: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    # Chat Assistant Management Methods
+    async def create_chat_assistant(self, name: str, dataset_ids: List[str], 
+                                   avatar: str = "", description: str = "") -> Dict:
+        """Create a chat assistant"""
+        request = pb2.CreateChatAssistantRequest(
+            name=name,
+            avatar=avatar,
+            dataset_ids=dataset_ids
+        )
+        
+        # Set default prompt configuration
+        request.prompt.similarity_threshold = 0.2
+        request.prompt.keywords_similarity_weight = 0.3
+        request.prompt.top_n = 6
+        request.prompt.top_k = 1024
+        request.prompt.empty_response = "Sorry! No relevant content was found in the knowledge base!"
+        request.prompt.opener = "Hi! I'm your assistant, what can I do for you?"
+        request.prompt.show_quote = True
+        request.prompt.prompt = "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question."
+        
+        try:
+            response = await self.stub.CreateChatAssistant(request)
+            logger.info(f"Created chat assistant: {response.data.name} (ID: {response.data.id})")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": {
+                    "id": response.data.id,
+                    "name": response.data.name,
+                    "description": response.data.description,
+                    "create_date": response.data.create_date
+                }
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to create chat assistant: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def list_chat_assistants(self, page: int = 1, page_size: int = 10) -> Dict:
+        """List chat assistants"""
+        request = pb2.ListChatAssistantsRequest(
+            page=page,
+            page_size=page_size
+        )
+        
+        try:
+            response = await self.stub.ListChatAssistants(request)
+            assistants = []
+            for assistant in response.data:
+                assistants.append({
+                    "id": assistant.id,
+                    "name": assistant.name,
+                    "description": assistant.description,
+                    "status": assistant.status,
+                    "create_date": assistant.create_date,
+                    "dataset_ids": list(assistant.dataset_ids)
+                })
+            
+            logger.info(f"Retrieved {len(assistants)} chat assistants")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": assistants
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to list chat assistants: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def update_chat_assistant(self, chat_id: str, name: str = None, 
+                                   dataset_ids: List[str] = None) -> Dict:
+        """Update a chat assistant"""
+        request = pb2.UpdateChatAssistantRequest(chat_id=chat_id)
+        
+        if name:
+            request.name = name
+        if dataset_ids:
+            request.dataset_ids.extend(dataset_ids)
+        
+        try:
+            response = await self.stub.UpdateChatAssistant(request)
+            logger.info(f"Updated chat assistant: {chat_id}")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to update chat assistant: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def delete_chat_assistants(self, assistant_ids: List[str]) -> Dict:
+        """Delete chat assistants"""
+        request = pb2.DeleteChatAssistantsRequest(ids=assistant_ids)
+        
+        try:
+            response = await self.stub.DeleteChatAssistants(request)
+            logger.info(f"Deleted {len(assistant_ids)} chat assistants")
+            return {
+                "code": response.code,
+                "message": response.message
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to delete chat assistants: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    # Session Management Methods
+    async def create_session_with_chat_assistant(self, chat_id: str, name: str, user_id: str = "") -> Dict:
+        """Create a session with a chat assistant"""
+        request = pb2.CreateSessionWithChatAssistantRequest(
+            chat_id=chat_id,
+            name=name,
+            user_id=user_id
+        )
+        
+        try:
+            response = await self.stub.CreateSessionWithChatAssistant(request)
+            logger.info(f"Created session: {response.data.name} (ID: {response.data.id})")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": {
+                    "id": response.data.id,
+                    "name": response.data.name,
+                    "chat_id": response.data.chat_id,
+                    "create_date": response.data.create_date
+                }
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to create session: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def list_chat_assistant_sessions(self, chat_id: str, page: int = 1, page_size: int = 10) -> Dict:
+        """List sessions for a chat assistant"""
+        request = pb2.ListChatAssistantSessionsRequest(
+            chat_id=chat_id,
+            page=page,
+            page_size=page_size
+        )
+        
+        try:
+            response = await self.stub.ListChatAssistantSessions(request)
+            sessions = []
+            for session in response.data:
+                sessions.append({
+                    "id": session.id,
+                    "name": session.name,
+                    "chat_id": session.chat_id,
+                    "create_date": session.create_date,
+                    "message_count": len(session.messages)
+                })
+            
+            logger.info(f"Retrieved {len(sessions)} sessions for chat assistant {chat_id}")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": sessions
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to list sessions: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def converse_with_chat_assistant(self, chat_id: str, question: str, 
+                                          session_id: str = "", stream: bool = True):
+        """Converse with a chat assistant"""
+        request = pb2.ConverseWithChatAssistantRequest(
+            chat_id=chat_id,
+            question=question,
+            stream=stream,
+            session_id=session_id
+        )
+        
+        try:
+            logger.info(f"Starting conversation with chat assistant: {chat_id}")
+            
+            async for response in self.stub.ConverseWithChatAssistant(request):
+                if response.code != 0:
+                    logger.error(f"Conversation error: {response.message}")
+                    yield {"error": response.message, "code": response.code}
+                else:
+                    result = {
+                        "answer": response.data.answer,
+                        "reference": response.data.reference,
+                        "session_id": response.data.session_id
+                    }
+                    yield result
+        
+        except grpc.RpcError as e:
+            logger.error(f"Failed to converse with chat assistant: {e}")
+            yield {"error": str(e), "code": e.code()}
+    
+    async def create_agent(self, title: str, description: str = "", dsl: str = "{}") -> Dict:
+        """Create a new agent"""
+        request = pb2.CreateAgentRequest(
+            title=title,
+            description=description,
+            dsl=dsl
+        )
+        
+        try:
+            response = await self.stub.CreateAgent(request)
+            logger.info(f"Created agent: {title}")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": response.data
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to create agent: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def update_agent(self, agent_id: str, title: str = None, 
+                          description: str = None, dsl: str = None) -> Dict:
+        """Update an agent"""
+        request = pb2.UpdateAgentRequest(agent_id=agent_id)
+        
+        if title:
+            request.title = title
+        if description:
+            request.description = description
+        if dsl:
+            request.dsl = dsl
+        
+        try:
+            response = await self.stub.UpdateAgent(request)
+            logger.info(f"Updated agent: {agent_id}")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": response.data
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to update agent: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def delete_agent(self, agent_id: str) -> Dict:
+        """Delete an agent"""
+        request = pb2.DeleteAgentRequest(agent_id=agent_id)
+        
+        try:
+            response = await self.stub.DeleteAgent(request)
+            logger.info(f"Deleted agent: {agent_id}")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": response.data
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to delete agent: {e}")
+            return {"error": str(e), "code": e.code()}
+    
+    async def converse_with_agent(self, agent_id: str, question: str, 
+                                 session_id: str = "", stream: bool = True, 
+                                 parameters: Dict[str, str] = None):
+        """Converse with an agent"""
+        request = pb2.ConverseWithAgentRequest(
+            agent_id=agent_id,
+            question=question,
+            stream=stream,
+            session_id=session_id,
+            sync_dsl=False
+        )
+        
+        if parameters:
+            for key, value in parameters.items():
+                request.parameters[key] = value
+        
+        try:
+            logger.info(f"Starting conversation with agent: {agent_id}")
+            
+            async for response in self.stub.ConverseWithAgent(request):
+                if response.code != 0:
+                    logger.error(f"Agent conversation error: {response.message}")
+                    yield {"error": response.message, "code": response.code}
+                else:
+                    result = {
+                        "answer": response.data.answer,
+                        "reference": response.data.reference,
+                        "session_id": response.data.session_id
+                    }
+                    yield result
+        
+        except grpc.RpcError as e:
+            logger.error(f"Failed to converse with agent: {e}")
+            yield {"error": str(e), "code": e.code()}
+    
+    async def generate_related_questions(self, question: str, industry: str = "general") -> Dict:
+        """Generate related questions"""
+        request = pb2.GenerateRelatedQuestionsRequest(
+            question=question,
+            industry=industry
+        )
+        
+        try:
+            response = await self.stub.GenerateRelatedQuestions(request)
+            logger.info(f"Generated {len(response.data)} related questions")
+            return {
+                "code": response.code,
+                "message": response.message,
+                "data": list(response.data)
+            }
+        except grpc.RpcError as e:
+            logger.error(f"Failed to generate related questions: {e}")
             return {"error": str(e), "code": e.code()}
     
     # Chat Completion Methods
@@ -438,15 +913,21 @@ class RAGFlowGRPCExamples:
                     if update_result.get('code') == 0:
                         logger.info("Dataset updated successfully")
 
-                    # Get knowledge graph
 
-                    #test - will removed
-                    dataset_id = datasets["data"][0].get('id')
+                    #Now Deleting new Dataset
+                    logger.info(f"Deleting dataset with ID: {dataset_id}")
+                    delete_result = await self.client.delete_datasets(dataset_id)
+                    logger.debug(f"Delete result: {json.dumps(delete_result, indent=2)}")
+                    if delete_result.get('code') == 0:
+                        logger.info("Dataset deleted successfully")
 
-                    kg_result = await self.client.get_dataset_knowledge_graph(dataset_id)
-                    logger.info(f"Knowledge graph: {json.dumps(kg_result, indent=2)}")
-                    
-                    return dataset_id
+            # Get knowledge graph
+            dataset_id = datasets["data"][0].get('id')
+            kg_result = await self.client.get_dataset_knowledge_graph(dataset_id)
+            logger.info(f"Knowledge graph: {json.dumps(kg_result, indent=2)}")
+            logger.info(f"Dataset operations completed successfully {dataset_id}")
+            logger.info(f" {"==="*5}")
+            return dataset_id
             
             return None
         except Exception as e:
@@ -535,6 +1016,273 @@ class RAGFlowGRPCExamples:
             logger.info(f"Available agents: {json.dumps(agents, indent=2)}")
         except Exception as e:
             logger.error(f"Agent operations failed: {e}",repr(e))
+    
+    async def test_document_parsing_operations(self, dataset_id: str):
+        """Test document parsing operations"""
+        if not dataset_id:
+            logger.warning("No dataset ID provided, skipping document parsing tests")
+            return
+            
+        logger.info("=== Testing Document Parsing Operations ===")
+        
+        try:
+            # List documents to get document IDs for parsing
+            docs_result = await self.client.list_documents(dataset_id)
+            if docs_result.get('code') == 0 and docs_result.get('data'):
+                document_ids = [doc['id'] for doc in docs_result['data'][:2]]  # Take first 2 documents
+                
+                if document_ids:
+                    # Start parsing documents
+                    parse_result = await self.client.parse_documents(dataset_id, document_ids)
+                    logger.info(f"Parse documents result: {json.dumps(parse_result, indent=2)}")
+                    
+                    # Wait a moment then stop parsing (for demo)
+                    await asyncio.sleep(2)
+                    
+                    stop_result = await self.client.stop_parsing_documents(dataset_id, document_ids)
+                    logger.info(f"Stop parsing result: {json.dumps(stop_result, indent=2)}")
+                else:
+                    logger.info("No documents found for parsing test")
+            else:
+                logger.warning("Could not retrieve documents for parsing test")
+                
+        except Exception as e:
+            logger.error(f"Document parsing operations failed: {e}")
+    
+    async def test_chunk_management_operations(self, dataset_id: str):
+        """Test chunk management operations"""
+        if not dataset_id:
+            logger.warning("No dataset ID provided, skipping chunk management tests")
+            return
+            
+        logger.info("=== Testing Chunk Management Operations ===")
+        
+        try:
+            # Get documents to work with chunks
+            docs_result = await self.client.list_documents(dataset_id)
+            if docs_result.get('code') == 0 and docs_result.get('data'):
+                document_id = docs_result['data'][0]['id']
+                logger.info(f"Using document ID: {document_id}")
+                
+                # Add a new chunk
+                add_result = await self.client.add_chunk(
+                    dataset_id=dataset_id,
+                    document_id=document_id,
+                    content="This is a test chunk created via gRPC client.",
+                    important_keywords=["test", "grpc", "chunk"],
+                    questions=["What is this chunk about?"]
+                )
+                logger.info(f"Add chunk result: {json.dumps(add_result, indent=2)}")
+                
+                # If we successfully added a chunk, try to update and delete it
+                if add_result.get('code') == 0 and add_result.get('data', {}).get('chunk_id'):
+                    chunk_id = add_result['data']['chunk_id']
+                    
+                    # Update the chunk
+                    update_result = await self.client.update_chunk(
+                        dataset_id=dataset_id,
+                        document_id=document_id,
+                        chunk_id=chunk_id,
+                        content="Updated test chunk content via gRPC client(made by Sachin).",
+                        important_keywords=["updated", "test", "grpc"]
+                    )
+                    logger.debug(f"Update chunk result: {json.dumps(update_result, indent=2)}")
+                    if update_result.get('code') == 0:
+                        logger.info("Chunk updated successfully")
+                    else:
+                        logger.warning(f"Failed to update chunk: {update_result.get('message', 'Unknown error')}")
+
+                    # List chunks in the document
+                    chunks_result = await self.client.list_chunks(
+                        dataset_id=dataset_id,
+                        document_id=document_id,
+                        page=1,
+                        page_size=5
+                    )
+                    logger.info(f"List chunks result: {json.dumps(chunks_result, indent=2)}")
+                
+
+                    # Delete the chunk
+                    delete_result = await self.client.delete_chunks(
+                        dataset_id=dataset_id,
+                        document_id=document_id,
+                        chunk_ids=[chunk_id]
+                    )
+                    logger.info(f"Delete chunk result: {json.dumps(delete_result, indent=2)}")
+                
+            else:
+                logger.warning("No documents found for chunk management test")
+                
+        except Exception as e:
+            logger.error(f"Chunk management operations failed: {e}")
+    
+    async def test_chat_assistant_operations(self):
+        """Test chat assistant management operations"""
+        logger.info("=== Testing Chat Assistant Operations ===")
+        
+        try:
+            # Get datasets to use with chat assistant
+            datasets_result = await self.client.list_datasets()
+            if datasets_result.get('code') == 0 and datasets_result.get('data'):
+                dataset_ids = [ds['id'] for ds in datasets_result['data'][:2]]  # Use first 2 datasets
+                
+                # Create a chat assistant
+                create_result = await self.client.create_chat_assistant(
+                    name="gRPC Test Assistant",
+                    dataset_ids=dataset_ids,
+                    description="A test chat assistant created via gRPC"
+                )
+                logger.info(f"Create chat assistant result: {json.dumps(create_result, indent=2)}")
+                
+                # List chat assistants
+                list_result = await self.client.list_chat_assistants()
+                logger.info(f"List chat assistants result: {json.dumps(list_result, indent=2)}")
+                
+                # If we successfully created an assistant, test other operations
+                if create_result.get('code') == 0 and create_result.get('data', {}).get('id'):
+                    chat_id = create_result['data']['id']
+                    
+                    # Update the chat assistant
+                    update_result = await self.client.update_chat_assistant(
+                        chat_id=chat_id,
+                        name="Updated gRPC Test Assistant"
+                    )
+                    logger.info(f"Update chat assistant result: {json.dumps(update_result, indent=2)}")
+                    
+                    # Test session operations
+                    await self.test_session_operations(chat_id)
+                    
+                    # Clean up - delete the chat assistant
+                    delete_result = await self.client.delete_chat_assistants([chat_id])
+                    logger.info(f"Delete chat assistant result: {json.dumps(delete_result, indent=2)}")
+                
+            else:
+                logger.warning("No datasets found for chat assistant test")
+                
+        except Exception as e:
+            logger.error(f"Chat assistant operations failed: {e}")
+    
+    async def test_session_operations(self, chat_id: str):
+        """Test session management operations"""
+        if not chat_id:
+            logger.warning("No chat ID provided, skipping session tests")
+            return
+            
+        logger.info("=== Testing Session Operations ===")
+        
+        try:
+            # Create a session with the chat assistant
+            session_result = await self.client.create_session_with_chat_assistant(
+                chat_id=chat_id,
+                name="Test Session via gRPC",
+                user_id="grpc_test_user"
+            )
+            logger.info(f"Create session result: {json.dumps(session_result, indent=2)}")
+            
+            # List sessions for the chat assistant
+            sessions_list = await self.client.list_chat_assistant_sessions(chat_id)
+            logger.info(f"List sessions result: {json.dumps(sessions_list, indent=2)}")
+            
+            # Test conversation with chat assistant
+            if session_result.get('code') == 0 and session_result.get('data', {}).get('id'):
+                session_id = session_result['data']['id']
+                
+                logger.info("Testing conversation with chat assistant...")
+                conversation_count = 0
+                async for response in self.client.converse_with_chat_assistant(
+                    chat_id=chat_id,
+                    question="Hello! Can you tell me about the documents in the knowledge base?",
+                    session_id=session_id
+                ):
+                    conversation_count += 1
+                    logger.info(f"Conversation response {conversation_count}: {json.dumps(response, indent=2)}")
+                    
+                    # Limit responses for demo
+                    if conversation_count >= 2:
+                        break
+                
+        except Exception as e:
+            logger.error(f"Session operations failed: {e}")
+    
+    async def test_agent_lifecycle_operations(self):
+        """Test complete agent lifecycle operations"""
+        logger.info("=== Testing Agent Lifecycle Operations ===")
+        
+        try:
+            # Create a new agent
+            agent_dsl = {
+                "components": {
+                    "begin": {"obj": {"component_name": "Begin"}},
+                    "answer": {"obj": {"component_name": "Answer"}}
+                }
+            }
+            
+            create_result = await self.client.create_agent(
+                title="gRPC Test Agent",
+                description="A test agent created via gRPC client",
+                dsl=json.dumps(agent_dsl)
+            )
+            logger.info(f"Create agent result: {json.dumps(create_result, indent=2)}")
+            
+            # List agents to verify creation
+            agents_list = await self.client.list_agents()
+            logger.info(f"List agents result: {json.dumps(agents_list, indent=2)}")
+            
+            # If creation was successful, test other operations
+            if create_result.get('code') == 0:
+                # Find our created agent (this is a simplified approach)
+                agent_id = None
+                if agents_list.get('code') == 0 and agents_list.get('data'):
+                    for agent in agents_list['data']:
+                        if agent['title'] == "gRPC Test Agent":
+                            agent_id = agent['id']
+                            break
+                
+                if agent_id:
+                    # Update the agent
+                    update_result = await self.client.update_agent(
+                        agent_id=agent_id,
+                        title="Updated gRPC Test Agent",
+                        description="Updated description for test agent"
+                    )
+                    logger.info(f"Update agent result: {json.dumps(update_result, indent=2)}")
+                    
+                    # Test conversation with agent
+                    logger.info("Testing conversation with agent...")
+                    conversation_count = 0
+                    async for response in self.client.converse_with_agent(
+                        agent_id=agent_id,
+                        question="Hello! What can you do?",
+                        parameters={"test_param": "test_value"}
+                    ):
+                        conversation_count += 1
+                        logger.info(f"Agent conversation response {conversation_count}: {json.dumps(response, indent=2)}")
+                        
+                        # Limit responses for demo
+                        if conversation_count >= 2:
+                            break
+                    
+                    # Clean up - delete the agent
+                    delete_result = await self.client.delete_agent(agent_id)
+                    logger.info(f"Delete agent result: {json.dumps(delete_result, indent=2)}")
+                
+        except Exception as e:
+            logger.error(f"Agent lifecycle operations failed: {e}")
+    
+    async def test_advanced_features(self):
+        """Test advanced features like related question generation"""
+        logger.info("=== Testing Advanced Features ===")
+        
+        try:
+            # Test related question generation
+            questions_result = await self.client.generate_related_questions(
+                question="What are the benefits of using RAGFlow?",
+                industry="software_development"
+            )
+            logger.info(f"Related questions result: {json.dumps(questions_result, indent=2)}")
+            
+        except Exception as e:
+            logger.error(f"Advanced features test failed: {e}")
 
 
 async def main():
@@ -549,14 +1297,26 @@ async def main():
             # Test document operations
             await examples.test_document_operations(dataset_id)
             
+            # Test chunk management operations
+            await examples.test_chunk_management_operations(dataset_id)
+            
             # Test chunk retrieval (using any available datasets)
             datasets = await examples.client.list_datasets()
             if datasets.get('code') == 0 and datasets.get('data'):
                 dataset_ids = [ds['id'] for ds in datasets['data'] if ds['chunk_count'] != 0]
                 await examples.test_chunk_retrieval(dataset_ids)
             
-            # Test agent operations
+            # Test chat assistant operations
+            await examples.test_chat_assistant_operations()
+            
+            # Test agent lifecycle operations
+            await examples.test_agent_lifecycle_operations()
+            
+            # Test traditional agent operations
             await examples.test_agent_operations()
+            
+            # Test advanced features
+            await examples.test_advanced_features()
             
             # Test chat completion
             await examples.test_chat_completion()

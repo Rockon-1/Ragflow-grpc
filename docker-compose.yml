@@ -1,31 +1,42 @@
 version: '3.8'
 
+# This includes the database and other services that RAGFlow needs
+include:
+  - ./ragflow/docker/docker-compose-base.yml
+
 services:
+  # Main RAGFlow service - this is the RAG application
+  ragflow:
+    image: infiniflow/ragflow:v0.15.0
+    container_name: ragflow-server
+    ports:
+      - "9380:9380"  # Main web interface
+      - "80:80"      # HTTP
+    environment:
+      - TZ=UTC
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  # Our gRPC Server that talks to RAGFlow
   ragflow-grpc-server:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .  # Build from our Dockerfile
     container_name: ragflow-grpc-server
     ports:
-      - "50051:50051"
+      - "50051:50051"  # gRPC port
     environment:
-      - RAGFLOW_BASE_URL=${RAGFLOW_BASE_URL:-http://host.docker.internal:80}
-      - API_KEY=${API_KEY:-ragflow-QzMzk4NzE0NzQ2ZDExZjBhMDgzYTZiOW}
+      # Tell our server how to connect to RAGFlow
+      - RAGFLOW_BASE_URL=http://ragflow:9380
+      - API_KEY=ragflow-QzMzk4NzE0NzQ2ZDExZjBhMDgzYTZiOW
       - GRPC_HOST=0.0.0.0
       - GRPC_PORT=50051
+    depends_on:
+      - ragflow  # Wait for RAGFlow to start first
     restart: unless-stopped
     networks:
-      - ragflow-network
-    # Mount config file if you want to override configuration
-    # volumes:
-    #   - ./grpc_ragflow_server/config.py:/app/grpc_ragflow_server/config.py:ro
-    healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; channel = grpc.insecure_channel('localhost:50051'); channel.close()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      - ragflow
 
+# Network so containers can talk to each other
 networks:
-  ragflow-network:
+  ragflow:
     driver: bridge
