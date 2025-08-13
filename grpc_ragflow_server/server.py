@@ -381,11 +381,29 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             result = await client.upload_documents(request.dataset_id, files)
             
             response = pb2.UploadDocumentsResponse()
-            response.code = result.get('code', 0)
-            response.message = result.get('message', '')
+            # Ensure result is a dict before calling .get()
+            if isinstance(result, dict):
+                response.code = result.get('code', 0)
+                response.message = result.get('message', '')
+            else:
+                response.code = 500
+                response.message = f"Unexpected result type: {type(result)}"
+                return response
             
-            if 'data' in result:
-                for doc_data in result['data']:
+            if 'data' in result and isinstance(result, dict):
+                # Handle different possible data structures
+                data = result['data']
+                if isinstance(data, dict) and 'documents' in data:
+                    # If data is a dict with 'documents' key, use that
+                    documents = data['documents']
+                elif isinstance(data, list):
+                    # If data is directly a list of documents
+                    documents = data
+                else:
+                    # If data is a single document, wrap in list
+                    documents = [data] if data else []
+                
+                for doc_data in documents:
                     doc = pb2.Document()
                     doc.id = doc_data.get('id', '')
                     doc.name = doc_data.get('name', '')
@@ -850,6 +868,7 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                 data['user_id'] = request.user_id
             
             async for chunk in client.converse_with_chat_assistant(request.chat_id, data):
+                print(f"\n{'*'*5} Received chunk from ConverseWithChatAssistant: {chunk}")
                 if 'error' in chunk:
                     yield pb2.ConverseWithChatAssistantResponse(
                         code=500,
@@ -860,7 +879,11 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                     response.code = chunk.get('code', 0)
                     response.message = chunk.get('message', '')
                     
-                    if 'data' in chunk:
+                    if 'data' in chunk and isinstance(chunk['data'],bool):
+                        response.message += str(chunk['data'])
+
+
+                    elif 'data' in chunk:
                         conv_data = chunk['data']
                         response.data.answer = conv_data.get('answer', '')
                         response.data.reference = json.dumps(conv_data.get('reference', {}))
@@ -882,10 +905,11 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             
             data = {
                 'question': request.question,
-                'stream': request.stream,
-                'sync_dsl': request.sync_dsl
+                'stream': request.stream
             }
-            
+            if request.sync_dsl:
+                data['sync_dsl'] = request.sync_dsl
+
             if request.session_id:
                 data['session_id'] = request.session_id
             if request.user_id:
@@ -894,8 +918,10 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             # Add parameters
             for key, value in request.parameters.items():
                 data[key] = value
-            
+
+            print(f"\n{"*"*5} Sending request to agent in ConverseWithAgent: {data}")
             async for chunk in client.converse_with_agent(request.agent_id, data):
+                print(f"\nAgent response chunk in ConverseWithAgent: {chunk}")
                 if 'error' in chunk:
                     yield pb2.ConverseWithAgentResponse(
                         code=500,
@@ -952,6 +978,14 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             
             result = await client.list_agents(params)
             
+            # Ensure result is a dict before processing
+            if not isinstance(result, dict):
+                print(f"Error: Expected dict but got {type(result)}: {result}")
+                return pb2.ListAgentsResponse(
+                    code=500, 
+                    message=f"Unexpected result type: {type(result)}"
+                )
+            
             # Check for HTTP error status code
             if result.get('code', 0) >= 400 or (result.get('code', 0) < 200 and result.get('code', 0) != 0):
                 print(f"Error in list_agents: {result.get('message', '')} (code: {result.get('code', 0)})", result)
@@ -962,26 +996,29 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                 print("Returning empty response due to error in list_agents")
                 return response
 
-            print("ListAgents result:", result)
             response = pb2.ListAgentsResponse()
             response.code = result.get('code', 0)
             response.message = result.get('message', '')
             print("\n\nProcessing agents:")
-            if 'data' in result:
-                for agent_data in result['data']:
-                    agent = pb2.Agent()
-                    agent.id = str(agent_data.get('id', '')) 
-                    agent.title = str(agent_data.get('title', ''))
-                    agent.avatar = str(agent_data.get('avatar', ''))
-                    agent.canvas_type = str(agent_data.get('canvas_type', ''))
-                    agent.description = str(agent_data.get('description', ''))
-                    agent.dsl = str(agent_data.get('dsl', ''))
-                    agent.create_date = str(agent_data.get('create_date', ''))
-                    agent.create_time = int(agent_data.get('create_time', 0))
-                    agent.update_date = str(agent_data.get('update_date', ''))
-                    agent.update_time = int(agent_data.get('update_time', 0))
-                    agent.user_id = str(agent_data.get('user_id', ''))
-                    response.data.append(agent)
+            if 'data' in result and isinstance(result.get('data'), (list, dict)):
+                data = result['data']
+                # Handle both dict with 'agents' key and direct list
+                agents_list = data.get('agents', []) if isinstance(data, dict) else data
+                for agent_data in agents_list:
+                    if isinstance(agent_data, dict):
+                        agent = pb2.Agent()
+                        agent.id = str(agent_data.get('id', '')) 
+                        agent.title = str(agent_data.get('title', ''))
+                        agent.avatar = str(agent_data.get('avatar', ''))
+                        agent.canvas_type = str(agent_data.get('canvas_type', ''))
+                        agent.description = str(agent_data.get('description', ''))
+                        agent.dsl = str(agent_data.get('dsl', ''))
+                        agent.create_date = str(agent_data.get('create_date', ''))
+                        agent.create_time = int(agent_data.get('create_time', 0))
+                        agent.update_date = str(agent_data.get('update_date', ''))
+                        agent.update_time = int(agent_data.get('update_time', 0))
+                        agent.user_id = str(agent_data.get('user_id', ''))
+                        response.data.append(agent)
             print("Finished processing agents",response)
             return response
             
@@ -1005,11 +1042,19 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             result = await client.create_agent(data)
             
             print(f"CreateAgent result: {result}")
-            return pb2.CreateAgentResponse(
-                code=result.get('code', 0),
-                message=result.get('message', ''),
-                data=result.get('data', False)
-            )
+            # Ensure result is a dict before processing
+            if isinstance(result, dict):
+                return pb2.CreateAgentResponse(
+                    code=result.get('code', 0),
+                    message=result.get('message', ''),
+                    data=result.get('data', False)
+                )
+            else:
+                return pb2.CreateAgentResponse(
+                    code=500,
+                    message=f"Unexpected result type: {type(result)}",
+                    data=False
+                )
             
         except Exception as e:
             print(f"Exception in CreateAgent: {e}")
@@ -1063,6 +1108,8 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
     async def CreateChatAssistant(self, request, context):
         """Create chat assistant"""
         try:
+
+            print(f"\n{"***"*5} Creating chat assistant...")
             client = await self._get_client()
             
             data = {
@@ -1122,7 +1169,7 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                     prompt_config['variables'] = variables
                 
                 data['prompt'] = prompt_config
-            
+            print("Creating chat assistant request data:", json.dumps(data, indent=2))
             result = await client.create_chat_assistant(data)
             
             response = pb2.CreateChatAssistantResponse()
@@ -1186,8 +1233,7 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             client = await self._get_client()
             
             data = {}
-            if request.name:
-                data['name'] = request.name
+            data['name'] = request.name
             if request.avatar:
                 data['avatar'] = request.avatar
             if request.dataset_ids:
@@ -1206,8 +1252,9 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                     llm_config['presence_penalty'] = request.llm.presence_penalty
                 if request.llm.frequency_penalty:
                     llm_config['frequency_penalty'] = request.llm.frequency_penalty
-                data['llm'] = llm_config
-            
+                if llm_config:
+                    data['llm'] = llm_config
+
             # Handle prompt config
             if request.prompt:
                 prompt_config = {}
@@ -1241,7 +1288,7 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
                     prompt_config['variables'] = variables
                 
                 data['prompt'] = prompt_config
-            
+            print(f"\n{'*'*5} Sending request to UpdateChatAssistant: {data}")
             result = await client.update_chat_assistant(request.chat_id, data)
             
             return pb2.UpdateChatAssistantResponse(
@@ -1583,7 +1630,8 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             
         except Exception as e:
             return pb2.DeleteAgentSessionsResponse(code=500, message=str(e))
-    
+
+    # Need special Bearer token for this method which expires in 24 hr
     async def GenerateRelatedQuestions(self, request, context):
         """Generate related questions"""
         try:

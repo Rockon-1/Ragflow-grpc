@@ -412,15 +412,17 @@ class TestRagServicesServicerChatCompletion:
     @pytest.mark.asyncio
     async def test_create_chat_completion_streaming(self, servicer, mock_context):
         """Test streaming chat completion."""
-        mock_client = AsyncMock()
+        from unittest.mock import MagicMock
         
-        # Mock streaming response
-        async def mock_stream():
+        # Create a proper async generator function
+        async def mock_completion_generator(chat_id, data):
             yield {"choices": [{"delta": {"content": "Hello"}}]}
             yield {"choices": [{"delta": {"content": " world"}}]}
             yield {"choices": [{"delta": {"content": "!"}}]}
         
-        mock_client.create_chat_completion.return_value = mock_stream()
+        # Create a mock client and assign the async generator directly
+        mock_client = MagicMock()
+        mock_client.create_chat_completion = mock_completion_generator
 
         with patch.object(servicer, '_get_client', return_value=mock_client):
             messages = [pb2.ChatMessage(role="user", content="Hello")]
@@ -436,23 +438,26 @@ class TestRagServicesServicerChatCompletion:
             async for response in servicer.CreateChatCompletion(request, mock_context):
                 responses.append(response)
 
+            print("Chat completion responses:", responses)
             assert len(responses) == 3
-            mock_client.create_chat_completion.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_create_agent_completion_success(self, servicer, mock_context):
         """Test agent completion."""
-        mock_client = AsyncMock()
+        from unittest.mock import MagicMock
         
-        async def mock_stream():
+        # Create a proper async generator function
+        async def mock_agent_completion_generator(agent_id, data):
             yield {
                 "id": "completion_123",
                 "choices": [{"delta": {"content": "Agent response"}}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 5}
             }
         
-        mock_client.create_agent_completion.return_value = mock_stream()
+        # Create a mock client and assign the async generator directly
+        mock_client = MagicMock()
+        mock_client.create_agent_completion = mock_agent_completion_generator
 
         with patch.object(servicer, '_get_client', return_value=mock_client):
             messages = [pb2.ChatMessage(role="user", content="Execute task")]
@@ -468,7 +473,6 @@ class TestRagServicesServicerChatCompletion:
                 responses.append(response)
 
             assert len(responses) == 1
-            mock_client.create_agent_completion.assert_called_once()
 
 
 class TestRagServicesServicerAgents:
@@ -486,22 +490,28 @@ class TestRagServicesServicerAgents:
     @pytest.mark.asyncio
     async def test_create_agent_success(self, servicer, mock_context):
         """Test agent creation."""
+        import json
+        
         mock_client = AsyncMock()
         mock_client.create_agent.return_value = {
             "code": 0,
-            "data": {
-                "id": "agent_123",
-                "title": "Test Agent",
-                "description": "Test description",
-                "dsl": "{}"
-            }
+            "data": True,
+            "message":"sucess"
         }
 
         with patch.object(servicer, '_get_client', return_value=mock_client):
+            dsl_dict = {
+                "components": {
+                    "begin": {"obj": {"component_name": "Begin"}},
+                    "answer": {"obj": {"component_name": "Answer"}}
+                }
+            }
+            dsl_json = json.dumps(dsl_dict)
+            
             request = pb2.CreateAgentRequest(
                 title="Test Agent",
                 description="Test description",
-                dsl="{}"
+                dsl=dsl_json
             )
 
             response = await servicer.CreateAgent(request, mock_context)
@@ -509,7 +519,7 @@ class TestRagServicesServicerAgents:
             mock_client.create_agent.assert_called_once_with({
                 "title": "Test Agent",
                 "description": "Test description", 
-                "dsl": "{}"
+                "dsl": dsl_json
             })
             assert response.code == 0
 

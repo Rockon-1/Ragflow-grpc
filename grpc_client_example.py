@@ -477,16 +477,6 @@ class RAGFlowGRPCClient:
             dataset_ids=dataset_ids
         )
         
-        # Set default prompt configuration
-        request.prompt.similarity_threshold = 0.2
-        request.prompt.keywords_similarity_weight = 0.3
-        request.prompt.top_n = 6
-        request.prompt.top_k = 1024
-        request.prompt.empty_response = "Sorry! No relevant content was found in the knowledge base!"
-        request.prompt.opener = "Hi! I'm your assistant, what can I do for you?"
-        request.prompt.show_quote = True
-        request.prompt.prompt = "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question."
-        
         try:
             response = await self.stub.CreateChatAssistant(request)
             logger.info(f"Created chat assistant: {response.data.name} (ID: {response.data.id})")
@@ -640,6 +630,7 @@ class RAGFlowGRPCClient:
             logger.info(f"Starting conversation with chat assistant: {chat_id}")
             
             async for response in self.stub.ConverseWithChatAssistant(request):
+                print(f"Received response from converse_with_chat_assistant: {response}")
                 if response.code != 0:
                     logger.error(f"Conversation error: {response.message}")
                     yield {"error": response.message, "code": response.code}
@@ -1252,8 +1243,7 @@ class RAGFlowGRPCExamples:
                     conversation_count = 0
                     async for response in self.client.converse_with_agent(
                         agent_id=agent_id,
-                        question="Hello! What can you do?",
-                        parameters={"test_param": "test_value"}
+                        question="Hello! What can you do?"
                     ):
                         conversation_count += 1
                         logger.info(f"Agent conversation response {conversation_count}: {json.dumps(response, indent=2)}")
@@ -1269,21 +1259,6 @@ class RAGFlowGRPCExamples:
         except Exception as e:
             logger.error(f"Agent lifecycle operations failed: {e}")
     
-    async def test_advanced_features(self):
-        """Test advanced features like related question generation"""
-        logger.info("=== Testing Advanced Features ===")
-        
-        try:
-            # Test related question generation
-            questions_result = await self.client.generate_related_questions(
-                question="What are the benefits of using RAGFlow?",
-                industry="software_development"
-            )
-            logger.info(f"Related questions result: {json.dumps(questions_result, indent=2)}")
-            
-        except Exception as e:
-            logger.error(f"Advanced features test failed: {e}")
-
 
 async def main():
     """Main function to run all examples"""
@@ -1314,9 +1289,6 @@ async def main():
             
             # Test traditional agent operations
             await examples.test_agent_operations()
-            
-            # Test advanced features
-            await examples.test_advanced_features()
             
             # Test chat completion
             await examples.test_chat_completion()

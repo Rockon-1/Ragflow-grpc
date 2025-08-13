@@ -18,7 +18,8 @@ class RAGFlowClient:
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.session = None
-    
+        self.sp_api_key = None
+
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
             headers={
@@ -89,10 +90,12 @@ class RAGFlowClient:
 
         if 'headers' not in kwargs:
             kwargs['headers'] = {}
-        kwargs['headers'].update({
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
-        })
+        
+        # Only add default headers if they're not already present
+        if 'Authorization' not in kwargs['headers']:
+            kwargs['headers']['Authorization'] = f'Bearer {self.api_key}'
+        if 'Content-Type' not in kwargs['headers']:
+            kwargs['headers']['Content-Type'] = 'application/json'
 
         try:
             async with self.session.request(method, url, **kwargs) as response:
@@ -405,13 +408,20 @@ class RAGFlowClient:
     
     async def converse_with_agent(self, agent_id: str, data: Dict) -> AsyncIterator[Dict]:
         """Converse with agent"""
-        headers = {'Authorization': f'Bearer {self.api_key}'}
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
         endpoint = f"/api/v1/agents/{agent_id}/completions"
+        
+        # Convert data to binary JSON
+        json_data = json.dumps(data).encode('utf-8')
+        print(f"\n{'*'*5} Sending request to converse_with_agent in ragflow_client : {json_data}")
         if data.get('stream', True):
-            async for chunk in self._stream_request('POST', endpoint, json=data, headers=headers):
+            async for chunk in self._stream_request('POST', endpoint, data=json_data, headers=headers):
                 yield chunk
         else:
-            result = await self._make_request('POST', endpoint, json=data, headers=headers)
+            result = await self._make_request('POST', endpoint, data=json_data, headers=headers)
             yield result
     
     async def list_agent_sessions(self, agent_id: str, params: Dict) -> Dict:
@@ -426,8 +436,8 @@ class RAGFlowClient:
 
     async def generate_related_questions(self, data: Dict) -> Dict:
         """Generate related questions"""
-        # Note: This endpoint uses login token, may need different auth
-        headers = {'Authorization': f'Bearer {self.api_key}'}
+        # Note: This endpoint uses login token, may need different auth  #need to check
+        headers = {'Authorization': f'Bearer {self.sp_api_key}'}
         return await self._make_request('POST', '/v1/sessions/related_questions', json=data, headers=headers)
 
     # Agent Management
