@@ -20,6 +20,11 @@ dependencies = [
     "pydantic>=2.0.0",
     "typing-extensions>=4.5.0",
     "config>=0.5.1",
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.3.1",
+    "pytest-mock>=3.11.1",
 ]
 
 
@@ -64,9 +69,8 @@ testpaths = [
 ]
 asyncio_mode = "auto"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "grpc: marks tests as grpc tests",
 ]
 
 [tool.coverage.run]

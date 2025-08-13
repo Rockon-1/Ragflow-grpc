@@ -3,10 +3,10 @@ import grpc
 import json
 from concurrent import futures
 from typing import Dict, List, Optional, AsyncIterator
-import ragflow_service_pb2 as pb2
-import ragflow_service_pb2_grpc as pb2_grpc
-from ragflow_client import RAGFlowClient, RAGFlowConnectionError
-from config import GRPC_HOST, GRPC_PORT
+from . import ragflow_service_pb2 as pb2
+from . import ragflow_service_pb2_grpc as pb2_grpc
+from .ragflow_client import RAGFlowClient, RAGFlowConnectionError
+from .config import GRPC_HOST, GRPC_PORT
 
 
 
@@ -295,7 +295,10 @@ class RagServicesServicer(pb2_grpc.RagServicesServicer):
             response.message = result.get('message', '')
             print("**response by sachin-**", response,response.code)
             if 'data' in result:
-                for dataset_data in result['data']:
+                data = result['data']
+                # Handle both formats: data as list or data as dict with datasets key
+                datasets_list = data if isinstance(data, list) else data.get('datasets', [])
+                for dataset_data in datasets_list:
                     dataset = pb2.Dataset()
                     dataset.id = str(dataset_data.get('id', ''))
                     dataset.name = str(dataset_data.get('name', ''))

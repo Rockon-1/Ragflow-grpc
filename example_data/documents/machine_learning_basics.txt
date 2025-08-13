@@ -1,0 +1,62 @@
+Machine Learning Fundamentals
+
+Machine Learning (ML) is a subset of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed. ML algorithms build mathematical models based on training data to make predictions or decisions.
+
+Types of Machine Learning:
+
+1. Supervised Learning
+   - Uses labeled training data
+   - Goal: Learn mapping from inputs to outputs
+   - Examples: Classification, Regression
+   - Algorithms: Linear Regression, Decision Trees, SVM, Neural Networks
+   - Use cases: Email spam detection, Image recognition, Price prediction
+
+2. Unsupervised Learning
+   - Finds patterns in data without labels
+   - Goal: Discover hidden structures in data
+   - Examples: Clustering, Association Rules, Dimensionality Reduction
+   - Algorithms: K-Means, Hierarchical Clustering, PCA, DBSCAN
+   - Use cases: Customer segmentation, Anomaly detection, Data compression
+
+3. Reinforcement Learning
+   - Learns through interaction with environment
+   - Uses rewards and penalties to guide learning
+   - Goal: Maximize cumulative reward
+   - Components: Agent, Environment, Actions, States, Rewards
+   - Applications: Game playing, Robotics, Autonomous systems, Trading
+
+Semi-Supervised Learning:
+- Combination of supervised and unsupervised learning
+- Uses both labeled and unlabeled data
+- Useful when labeling data is expensive or time-consuming
+
+Common ML Workflow:
+1. Problem Definition and Data Collection
+2. Data Exploration and Preprocessing
+3. Feature Engineering and Selection
+4. Model Selection and Training
+5. Model Evaluation and Validation
+6. Hyperparameter Tuning
+7. Model Deployment and Monitoring
+8. Model Maintenance and Updates
+
+Key Concepts:
+- Training Set: Data used to train the model
+- Validation Set: Data used to tune hyperparameters
+- Test Set: Data used to evaluate final model performance
+- Overfitting: Model performs well on training data but poorly on new data
+- Underfitting: Model is too simple to capture underlying patterns
+- Bias-Variance Tradeoff: Balance between model complexity and generalization
+
+Popular ML Libraries and Frameworks:
+- Python: scikit-learn, TensorFlow, PyTorch, Keras, XGBoost
+- R: caret, randomForest, e1071, glmnet
+- Java: Weka, Apache Spark MLlib, Deeplearning4j
+- Scala: Apache Spark MLlib, Breeze
+
+Evaluation Metrics:
+- Classification: Accuracy, Precision, Recall, F1-Score, ROC-AUC
+- Regression: MAE, MSE, RMSE, R-squared
+- Clustering: Silhouette Score, Davies-Bouldin Index
+
+Machine learning is revolutionizing industries by enabling data-driven decision making and automation of complex tasks. It's the foundation for many AI applications we use today.

@@ -1,5 +1,5 @@
 
-.PHONY: setup setup-without-ragflow install-uv check-deps clone-ragflow run-docker protobuf install-deps docker-build docker-run docker-stop docker-logs
+.PHONY: setup setup-without-ragflow install-uv check-deps clone-ragflow run-docker protobuf install-deps docker-build docker-run docker-stop docker-logs test test-unit test-grpc test-check
 
 setup: install-uv check-deps clone-ragflow run-docker install-deps protobuf ## Full project setup
 	@echo "Project setup complete!"
@@ -84,3 +84,20 @@ docker-logs: ## View logs from the Docker container
 	docker compose logs -f ragflow-grpc-server
 
 docker-build-and-run: docker-build docker-run ## Build and run the Docker container
+
+# Testing commands
+test: ## Run all tests
+	python test_runner.py all
+
+test-unit: ## Run unit tests only
+	python test_runner.py unit
+
+test-grpc: ## Run gRPC tests (requires server running)
+	python test_runner.py grpc
+
+test-check: ## Check test environment setup
+	python test_runner.py check
+
+help: ## Show this help message
+	@echo "Available commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'

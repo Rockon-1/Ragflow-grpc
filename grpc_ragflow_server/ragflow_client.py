@@ -2,7 +2,7 @@ import aiohttp
 import asyncio
 import json
 from typing import Dict, List, Optional, Union, AsyncIterator
-from config import RAGFLOW_BASE_URL, API_KEY
+from .config import RAGFLOW_BASE_URL, API_KEY
 
 
 
