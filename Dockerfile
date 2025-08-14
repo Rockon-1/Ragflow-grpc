@@ -9,6 +9,9 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV GRPC_HOST=0.0.0.0
 ENV GRPC_PORT=50051
+# Default RAGFlow connection settings (will be overridden by docker-compose)
+ENV RAGFLOW_BASE_URL=http://ragflow:80
+ENV API_KEY=75bb8d62790a11f0bcd2a26a1b104320
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -33,14 +36,14 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN uv sync
 
 # Generate protobuf files
-RUN python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. grpc_ragflow_server/ragflow_service.proto
+RUN uv run -- python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. grpc_ragflow_server/ragflow_service.proto
 
 # Expose gRPC port
 EXPOSE 50051
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import grpc; channel = grpc.insecure_channel('localhost:50051'); channel.close()" || exit 1
+    CMD python -c "import grpc, requests, os; grpc.insecure_channel('localhost:50051').close(); ragflow_url=os.environ.get('RAGFLOW_BASE_URL'); requests.head(ragflow_url) if ragflow_url else exit(0)" || exit 1
 
 # Run the gRPC server
 CMD ["python", "main.py", "server"]
