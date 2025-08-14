@@ -1,5 +1,9 @@
 version: '3.8'
 
+# Load environment variables from .env file
+env_file:
+  - .env
+
 # This includes the database and other services that RAGFlow needs
 include:
   - ./ragflow/docker/docker-compose-base.yml
@@ -27,7 +31,7 @@ services:
     environment:
       # Tell our server how to connect to RAGFlow
       - RAGFLOW_BASE_URL=http://ragflow:9380
-      - API_KEY=ragflow-QzMzk4NzE0NzQ2ZDExZjBhMDgzYTZiOW
+      - API_KEY=${API_KEY}
       - GRPC_HOST=0.0.0.0
       - GRPC_PORT=50051
     depends_on:

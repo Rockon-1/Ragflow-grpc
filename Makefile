@@ -1,7 +1,7 @@
 
-.PHONY: setup setup-without-ragflow install-uv check-deps clone-ragflow run-docker protobuf install-deps docker-build docker-run docker-stop docker-logs test test-unit test-grpc test-check
+.PHONY: setup setup-without-ragflow install-uv check-deps clone-ragflow run-docker protobuf install-deps generate-api-key docker-build docker-run docker-stop docker-logs test test-unit test-grpc test-check
 
-setup: install-uv check-deps clone-ragflow run-docker install-deps protobuf ## Full project setup
+setup: install-uv check-deps clone-ragflow run-docker install-deps protobuf generate-api-key ## Full project setup
 	@echo "Project setup complete!"
 
 setup-without-ragflow: install-uv check-deps install-deps protobuf ## Setup without cloning ragflow or running docker (useful when docker is already running)
@@ -63,6 +63,22 @@ endif
 protobuf: ## Generate protobuf files
 	python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. grpc_ragflow_server\ragflow_service.proto || echo "protoc not found, using pre-generated files"
 
+generate-api-key: ## Generate RAGFlow API key and save to .env file
+	@echo "Waiting for RAGFlow server to be ready..."
+ifeq ($(OS),Windows_NT)
+	@timeout /t 30 >nul
+	@echo "Generating RAGFlow API key..."
+	@for /f "tokens=2 delims==" %%i in ('python get_ragflow_token.py ^| findstr "API_KEY="') do set API_KEY=%%i
+	@echo "API key generated and saved to .env file"
+	@echo "API key exported to environment variable"
+else
+	@sleep 30
+	@echo "Generating RAGFlow API key..."
+	@export API_KEY=$$(python get_ragflow_token.py | grep "API_KEY=" | cut -d'=' -f2)
+	@echo "API key generated and saved to .env file"
+	@echo "API key exported to environment variable"
+endif
+
 install-deps: ## Install required Python dependencies
 	@uv venv .venv
 ifeq ($(OS),Windows_NT)
@@ -74,8 +90,15 @@ endif
 docker-build: ## Build the gRPC server Docker image
 	docker build -t ragflow-grpc-server .
 
-docker-run: ## Run the gRPC server in Docker container
-	docker compose up -d
+docker-run: ## Run the gRPC server in Docker container (with API key generation)
+	@echo "Ensuring API key is available..."
+ifeq ($(OS),Windows_NT)
+	@if not exist .env $(MAKE) generate-api-key
+	@docker compose up -d
+else
+	@test -f .env || $(MAKE) generate-api-key
+	@docker compose up -d
+endif
 
 docker-stop: ## Stop the gRPC server Docker container
 	docker compose down
@@ -83,7 +106,7 @@ docker-stop: ## Stop the gRPC server Docker container
 docker-logs: ## View logs from the Docker container
 	docker compose logs -f ragflow-grpc-server
 
-docker-build-and-run: docker-build docker-run ## Build and run the Docker container
+docker-build-and-run: docker-build generate-api-key docker-run ## Build and run the Docker container
 
 # Testing commands
 test: ## Run all tests
