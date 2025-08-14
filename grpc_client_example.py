@@ -968,8 +968,8 @@ class RAGFlowGRPCExamples:
             logger.info(f"Retrieved chunks: {json.dumps(chunks_result, indent=2)}")
         except Exception as e:
             logger.error(f"Chunk retrieval failed: {e}")
-    
-    async def test_chat_completion(self):
+
+    async def test_chat_completion(self, chat_id):
         """Test streaming chat completion"""
         logger.info("=== Testing Chat Completion ===")
         
@@ -981,7 +981,7 @@ class RAGFlowGRPCExamples:
             logger.info("Starting streaming chat completion...")
             chunk_count = 0
             async for chunk in self.client.create_chat_completion(
-                chat_id="2e5803da761011f0a638ea9746a4f026",
+                chat_id=chat_id,
                 model="deepseek-chat",
                 messages=messages,
                 stream=True
@@ -1143,12 +1143,15 @@ class RAGFlowGRPCExamples:
                     # Test session operations
                     await self.test_session_operations(chat_id)
                     
+                    # Test chat completion
+                    await self.test_chat_completion(chat_id)
+
                     # Clean up - delete the chat assistant
                     delete_result = await self.client.delete_chat_assistants([chat_id])
                     logger.info(f"Delete chat assistant result: {json.dumps(delete_result, indent=2)}")
                 
             else:
-                logger.warning("No datasets found for chat assistant test")
+                logger.warning(f"No datasets found for chat assistant test, http status = {datasets_result.get('code')}, \n data={datasets_result.get('data')}")
                 
         except Exception as e:
             logger.error(f"Chat assistant operations failed: {e}")
@@ -1290,8 +1293,6 @@ async def main():
             # Test traditional agent operations
             await examples.test_agent_operations()
             
-            # Test chat completion
-            await examples.test_chat_completion()
         
         logger.info("All examples completed successfully!")
     

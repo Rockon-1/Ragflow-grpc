@@ -25,9 +25,11 @@ endif
 
 clone-ragflow: ## Clone ragflow repo and checkout version
 ifeq ($(OS),Windows_NT)
+	@if exist ragflow rmdir /s /q ragflow
 	@if not exist ragflow git clone https://github.com/infiniflow/ragflow.git
 	@cd ragflow\docker && git checkout -f v0.20.1
 else
+	@rm -rf ragflow
 	@test -d ragflow || git clone https://github.com/infiniflow/ragflow.git
 	@cd ragflow/docker && git checkout -f v0.20.1
 endif
@@ -61,23 +63,23 @@ endif
 
 
 protobuf: ## Generate protobuf files
-	python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. grpc_ragflow_server\ragflow_service.proto || echo "protoc not found, using pre-generated files"
+	uv run -- python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. grpc_ragflow_server\ragflow_service.proto || echo "protoc not found, using pre-generated files"
+
 
 generate-api-key: ## Generate RAGFlow API key and save to .env file
-	@echo "Waiting for RAGFlow server to be ready..."
 ifeq ($(OS),Windows_NT)
-	@timeout /t 30 >nul
+	@timeout /t 3 >nul
 	@echo "Generating RAGFlow API key..."
-	@for /f "tokens=2 delims==" %%i in ('python get_ragflow_token.py ^| findstr "API_KEY="') do set API_KEY=%%i
-	@echo "API key generated and saved to .env file"
+	uv run get_ragflow_token.py
 	@echo "API key exported to environment variable"
 else
 	@sleep 30
 	@echo "Generating RAGFlow API key..."
-	@export API_KEY=$$(python get_ragflow_token.py | grep "API_KEY=" | cut -d'=' -f2)
+	uv run get_ragflow_token.py
 	@echo "API key generated and saved to .env file"
 	@echo "API key exported to environment variable"
 endif
+
 
 install-deps: ## Install required Python dependencies
 	@uv venv .venv
@@ -110,16 +112,16 @@ docker-build-and-run: docker-build generate-api-key docker-run ## Build and run 
 
 # Testing commands
 test: ## Run all tests
-	python test_runner.py all
+	uv run test_runner.py all
 
 test-unit: ## Run unit tests only
-	python test_runner.py unit
+	uv run test_runner.py unit
 
 test-grpc: ## Run gRPC tests (requires server running)
-	python test_runner.py grpc
+	uv run test_runner.py grpc
 
 test-check: ## Check test environment setup
-	python test_runner.py check
+	uv run test_runner.py check
 
 help: ## Show this help message
 	@echo "Available commands:"

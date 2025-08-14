@@ -1,5 +1,8 @@
 import os
+from dotenv import load_dotenv
 
+
+load_dotenv(override=True) 
 # RAGFlow API Configuration
 RAGFLOW_BASE_URL = os.environ.get("RAGFLOW_BASE_URL", "http://localhost:80")
 # API_KEY = os.environ.get("API_KEY", "ragflow-QzMzk4NzE0NzQ2ZDExZjBhMDgzYTZiOW")

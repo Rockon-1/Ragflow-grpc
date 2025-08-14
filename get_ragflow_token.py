@@ -9,6 +9,9 @@ import os
 import sys
 import base64
 from grpc_ragflow_server.config import RAGFLOW_BASE_URL
+from typing import Optional
+from pathlib import Path
+from dotenv import load_dotenv
 
 # Configuration
 HOST_ADDRESS = RAGFLOW_BASE_URL
@@ -65,11 +68,80 @@ def get_api_key_fixture():
         sys.exit(1)
 
 
+def export_api_key_to_env(api_key: Optional[str] = None, 
+                          env_file: str = ".env", 
+                          key_name: str = "API_KEY",
+                          overwrite: bool = True) -> str:
+    """
+    Export an API key to a .env file.
+    
+    Args:
+        api_key: The API key to export. If None, a new one will be generated.
+        env_file: Path to the .env file (default: ".env")
+        key_name: The name of the environment variable to set (default: "RAGFLOW_API_KEY")
+        overwrite: Whether to overwrite the key if it already exists in the file
+        
+    Returns:
+        The API key that was exported
+    """
+    # Generate a new API key if one wasn't provided
+    if api_key is None:
+        api_key = "API_KEY"
+    
+    env_path = Path(env_file)
+    existing_content = {}
+    new_content = []
+    key_exists = False
+    
+    # Read existing content if the file exists
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    new_content.append(line)
+                    continue
+                    
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    existing_content[key] = value.strip()
+                    
+                    if key == key_name:
+                        key_exists = True
+                        if not overwrite:
+                            # Keep existing value
+                            new_content.append(line)
+                        else:
+                            # Will be added later
+                            pass
+                    else:
+                        new_content.append(line)
+    
+    # Add or update the API key
+    if not key_exists or overwrite:
+        new_content.append(f"{key_name}={api_key}")
+    
+    # Write the updated content back to the file
+    with open(env_path, "w") as f:
+        f.write("\n".join(new_content))
+        if new_content and not new_content[-1].endswith("\n"):
+            f.write("\n")
+    
+    print(f"API key {'updated' if key_exists else 'added'} in {env_file}")
+    return api_key
+
+
 def main():
     """Main function to generate and output the API key."""
     try:
         api_key = get_api_key_fixture()
         print(f"API_KEY={api_key}")
+
+        export_api_key_to_env(api_key,key_name="API_KEY")
+        load_dotenv(override=True) 
+        print("API value in .env is ",os.environ.get("API_KEY", "75bb8d62790a11f0bcd2a26a1b104320"))
         return api_key
     except Exception as e:
         print(f"Failed to generate API key: {e}")

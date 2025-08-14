@@ -19,6 +19,7 @@ class RAGFlowClient:
         self.api_key = api_key
         self.session = None
         self.sp_api_key = None
+        print("RAGFlowClient initialized", self.api_key)
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(

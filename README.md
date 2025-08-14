@@ -91,7 +91,7 @@ Edit `config.py` with your RAGFlow server details:
 ```python
 # RAGFlow API Configuration
 RAGFLOW_BASE_URL = "http://localhost:80"
-API_KEY = "your-api-key-here"
+API_KEY = "your-api-key-here"         #automatic handle while setting up using make
 
 # gRPC Server Configuration
 GRPC_HOST = "0.0.0.0"  # Listen on all interfaces
@@ -161,9 +161,10 @@ Run the above command in 2 different processes with different menu options.
 python main.py server
 ```
 
+#This will trigger some operations like creating chat session or all main operations for user configured in ".env" file
 **Start Client** (in second process):
 ```bash
-python main.py client
+python main.py client           
 ```
 
 #### Advanced Options
