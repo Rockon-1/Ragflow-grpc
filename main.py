@@ -9,6 +9,10 @@ import sys
 import os
 import logging
 from typing import Optional
+from get_ragflow_token import main as get_ragflow_token_main
+
+from dotenv import load_dotenv
+
 
 # Add the grpc_ragflow_server directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'grpc_ragflow_server'))
@@ -26,6 +30,12 @@ async def start_server():
     try:
         from grpc_ragflow_server.server import serve
         logger.info("Starting RAGFlow gRPC server...")
+        load_dotenv(override=True) 
+        API_KEY = os.environ.get("API_KEY", "None")
+        logger.info(f"Using API_KEY: {API_KEY}")
+        if API_KEY == None or API_KEY == "None":
+            logger.warning("API_KEY is not set. ")
+            get_ragflow_token_main()
         await serve()
     except ImportError as e:
         logger.error(f"Failed to import server module: {e}")
